@@ -8,21 +8,12 @@ use crate::domain::instrument::InstrumentId;
 use crate::domain::price::Price;
 use crate::error::{CalceError, CalceResult};
 
-/// Provides market prices and FX rates.
 pub trait MarketDataService {
-    /// Look up the price of an instrument on a given date.
-    ///
     /// # Errors
     ///
     /// Returns `PriceNotFound` if no price is available.
-    fn get_price(
-        &self,
-        instrument: &InstrumentId,
-        date: NaiveDate,
-    ) -> CalceResult<Price>;
+    fn get_price(&self, instrument: &InstrumentId, date: NaiveDate) -> CalceResult<Price>;
 
-    /// Look up the exchange rate between two currencies on a given date.
-    ///
     /// # Errors
     ///
     /// Returns `FxRateNotFound` if no rate is available.
@@ -42,29 +33,22 @@ pub struct InMemoryMarketDataService {
 }
 
 impl InMemoryMarketDataService {
-    /// Create an empty market data service.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Insert a price for the given instrument and date.
     pub fn add_price(&mut self, instrument: &InstrumentId, date: NaiveDate, price: Price) {
         self.prices.insert((instrument.clone(), date), price);
     }
 
-    /// Insert an FX rate for the given date.
     pub fn add_fx_rate(&mut self, rate: FxRate, date: NaiveDate) {
         self.fx_rates.insert((rate.from, rate.to, date), rate);
     }
 }
 
 impl MarketDataService for InMemoryMarketDataService {
-    fn get_price(
-        &self,
-        instrument: &InstrumentId,
-        date: NaiveDate,
-    ) -> CalceResult<Price> {
+    fn get_price(&self, instrument: &InstrumentId, date: NaiveDate) -> CalceResult<Price> {
         self.prices
             .get(&(instrument.clone(), date))
             .copied()

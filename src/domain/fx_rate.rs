@@ -3,30 +3,23 @@ use std::fmt;
 
 use super::currency::Currency;
 
-/// A directed exchange rate between two currencies.
-///
-/// `FxRate { from: USD, to: SEK, rate: 10.5 }` means "1 USD = 10.5 SEK".
-/// Think of it as a unit: the rate carries its currency pair, enabling
-/// validation on conversion. Multiplying Money(USD) by FxRate(USD->SEK)
-/// "cancels" USD and produces SEK.
+/// Directed exchange rate: `FxRate { from: USD, to: SEK, rate: 10.5 }` means
+/// 1 USD = 10.5 SEK. The rate carries its currency pair so that multiplying
+/// Money(USD) by FxRate(USD->SEK) "cancels" USD and produces SEK.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FxRate {
-    /// The source currency.
     pub from: Currency,
-    /// The target currency.
     pub to: Currency,
-    /// The exchange rate (1 unit of `from` = `rate` units of `to`).
+    /// 1 unit of `from` = `rate` units of `to`.
     pub rate: Decimal,
 }
 
 impl FxRate {
-    /// Create a new directed FX rate.
     #[must_use]
     pub fn new(from: Currency, to: Currency, rate: Decimal) -> Self {
         FxRate { from, to, rate }
     }
 
-    /// Identity rate (1.0) for same-currency "conversion".
     #[must_use]
     pub fn identity(currency: Currency) -> Self {
         FxRate {
@@ -36,7 +29,6 @@ impl FxRate {
         }
     }
 
-    /// Invert the rate: USD->SEK becomes SEK->USD.
     #[must_use]
     pub fn invert(&self) -> Self {
         FxRate {

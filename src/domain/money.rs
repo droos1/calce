@@ -4,34 +4,26 @@ use std::fmt;
 use super::currency::Currency;
 use super::fx_rate::FxRate;
 
-/// Error when an FX conversion is attempted with mismatched currencies.
-/// E.g. trying to convert Money(EUR) using FxRate(USD->SEK).
+/// E.g. converting Money(EUR) with FxRate(USD->SEK) is a mismatch.
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("FX rate expects {expected}, but money is in {actual}")]
 pub struct CurrencyMismatch {
-    /// The currency the FX rate expected.
     pub expected: Currency,
-    /// The actual currency of the money.
     pub actual: Currency,
 }
 
-/// A monetary amount in a specific currency.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Money {
-    /// The decimal amount.
     pub amount: Decimal,
-    /// The currency of this amount.
     pub currency: Currency,
 }
 
 impl Money {
-    /// Create a new monetary amount.
     #[must_use]
     pub fn new(amount: Decimal, currency: Currency) -> Self {
         Money { amount, currency }
     }
 
-    /// Create a zero amount in the given currency.
     #[must_use]
     pub fn zero(currency: Currency) -> Self {
         Money {
@@ -40,11 +32,9 @@ impl Money {
         }
     }
 
-    /// Add two monetary amounts, returning an error if currencies differ.
-    ///
     /// # Errors
     ///
-    /// Returns `CurrencyMismatch` if `self` and `other` have different currencies.
+    /// Returns `CurrencyMismatch` if currencies differ.
     pub fn checked_add(self, other: Self) -> Result<Money, CurrencyMismatch> {
         if self.currency != other.currency {
             return Err(CurrencyMismatch {
@@ -58,14 +48,12 @@ impl Money {
         })
     }
 
-    /// Convert to another currency using a directed FX rate.
-    ///
-    /// Validates that this Money's currency matches the rate's `from` currency.
-    /// The result will be in the rate's `to` currency.
+    /// Convert using a directed FX rate. Validates that this Money's currency
+    /// matches the rate's `from` currency; result is in the rate's `to` currency.
     ///
     /// # Errors
     ///
-    /// Returns `CurrencyMismatch` if `self.currency` does not match `rate.from`.
+    /// Returns `CurrencyMismatch` if `self.currency != rate.from`.
     pub fn convert(&self, rate: &FxRate) -> Result<Money, CurrencyMismatch> {
         if self.currency != rate.from {
             return Err(CurrencyMismatch {

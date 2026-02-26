@@ -5,10 +5,7 @@ use crate::domain::trade::Trade;
 use crate::domain::user::UserId;
 use crate::error::{CalceError, CalceResult};
 
-/// Provides user trade data with authorization enforcement.
 pub trait UserDataService {
-    /// Fetch all trades for a user.
-    ///
     /// # Errors
     ///
     /// Returns `Unauthorized` if the security context lacks access.
@@ -27,13 +24,11 @@ pub struct InMemoryUserDataService {
 }
 
 impl InMemoryUserDataService {
-    /// Create an empty user data service.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Insert a trade. The trade's `user_id` determines the owner.
     pub fn add_trade(&mut self, trade: Trade) {
         self.trades
             .entry(trade.user_id.clone())

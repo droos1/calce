@@ -7,10 +7,7 @@ use crate::domain::position::Position;
 use crate::domain::quantity::Quantity;
 use crate::domain::trade::Trade;
 
-/// Aggregate a list of trades into net positions per instrument.
-///
-/// Only includes trades on or before `as_of_date`. Positions with
-/// zero net quantity (fully closed) are excluded.
+/// Trades after `as_of_date` are excluded. Fully closed positions (zero net quantity) are omitted.
 #[must_use]
 pub fn aggregate_positions(trades: &[Trade], as_of_date: NaiveDate) -> Vec<Position> {
     let mut net: HashMap<InstrumentId, (Quantity, crate::domain::currency::Currency)> =

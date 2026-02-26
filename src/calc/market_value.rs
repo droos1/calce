@@ -8,37 +8,22 @@ use crate::domain::quantity::Quantity;
 use crate::error::CalceResult;
 use crate::services::market_data::MarketDataService;
 
-/// A position enriched with market value data — output of the market value calc.
 #[derive(Clone, Debug)]
 pub struct ValuedPosition {
-    /// The instrument identifier.
     pub instrument_id: InstrumentId,
-    /// The net quantity held.
     pub quantity: Quantity,
-    /// The position's native currency.
     pub currency: Currency,
-    /// The price per unit on the valuation date.
     pub price: Price,
-    /// Market value in the position's native currency.
     pub market_value: Money,
-    /// Market value converted to the base currency.
     pub market_value_base: Money,
 }
 
-/// Result of a market value calculation.
 #[derive(Debug)]
 pub struct MarketValueResult {
-    /// Per-position breakdown.
     pub positions: Vec<ValuedPosition>,
-    /// Total portfolio value in the base currency.
     pub total: Money,
 }
 
-/// Calculate market value for a set of positions.
-///
-/// Looks up prices and FX rates from the provided market data service,
-/// computes per-position values, converts to base currency, and sums.
-///
 /// # Errors
 ///
 /// Returns `PriceNotFound` if a position's instrument has no price.

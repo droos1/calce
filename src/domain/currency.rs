@@ -1,20 +1,15 @@
 use std::fmt;
 use std::str::FromStr;
 
-/// Error for invalid currency codes.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("Currency code must be exactly 3 uppercase ASCII letters")]
 pub struct InvalidCurrencyCode;
 
-/// ISO 4217 currency code stored as 3 ASCII bytes.
-/// Copy, stack-allocated, cheap to pass around.
+/// ISO 4217 currency code stored as 3 ASCII bytes (Copy, stack-allocated).
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Currency([u8; 3]);
 
 impl Currency {
-    /// Create a currency from a known-valid code.
-    /// Use `try_new` or `parse` for runtime data.
-    ///
     /// # Panics
     ///
     /// Panics if `code` is not exactly 3 uppercase ASCII letters.
@@ -24,11 +19,9 @@ impl Currency {
         Self::try_new(code).expect("Invalid currency code")
     }
 
-    /// Fallible constructor for runtime data.
-    ///
     /// # Errors
     ///
-    /// Returns `InvalidCurrencyCode` if the code is not exactly 3 uppercase ASCII letters.
+    /// Returns `InvalidCurrencyCode` if not exactly 3 uppercase ASCII letters.
     pub fn try_new(code: &str) -> Result<Self, InvalidCurrencyCode> {
         let bytes: [u8; 3] = code
             .as_bytes()
@@ -42,8 +35,6 @@ impl Currency {
         }
     }
 
-    /// Returns the currency code as a string slice.
-    ///
     /// # Panics
     ///
     /// Cannot panic — bytes are validated at construction.
