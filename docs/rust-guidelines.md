@@ -135,6 +135,15 @@ let parsed = Currency::try_new(input)?;   // runtime data from files, APIs
 
 Simple newtypes without validation (e.g. `Quantity`, `Price`) only need `new`.
 
+**String ID newtypes** use the `string_id!` macro (defined in `domain/mod.rs`) to avoid boilerplate. It generates `new(impl Into<String>)`, `as_str()`, `Display`, and the standard derives (`Clone, Debug, PartialEq, Eq, Hash`):
+
+```rust
+string_id!(AccountId);
+string_id!(InstrumentId);
+```
+
+Use this for any newtype that wraps a `String` with no validation. Types with validation (e.g. `Currency`) still get manual impls.
+
 ## Standard Trait Impls for Domain Types
 
 Implement standard Rust traits where they make sense:
