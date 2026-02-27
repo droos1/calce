@@ -2,15 +2,22 @@
 
 Financial calculation engine for portfolio tracking.
 
-## Architecture
+## Workspace Structure
 
 ```
-CalcEngine (orchestration) — wires services to pure functions
-├── accounting/ — exact-precision ledger arithmetic (Decimal)
-├── calc/      — pure business logic, no side effects
-├── reports/   — composed views bundling multiple calc primitives
-├── services/  — trait-based data access, in-memory test impls
-└── domain/    — data types only, no business logic
+Cargo.toml                  — workspace root
+crates/
+├── calce-core/             — core Rust library
+│   ├── src/
+│   │   ├── accounting/     — exact-precision ledger arithmetic (Decimal)
+│   │   ├── calc/           — pure business logic, no side effects
+│   │   ├── reports/        — composed views bundling multiple calc primitives
+│   │   ├── services/       — trait-based data access, in-memory test impls
+│   │   └── domain/         — data types only, no business logic
+│   └── tests/
+└── calce-python/           — PyO3 bindings (cdylib)
+    ├── src/                — Rust binding code
+    └── tests/              — pytest tests
 ```
 
 Domain types are data carriers. Business logic belongs in `calc/`.
@@ -54,13 +61,13 @@ Each calculation has a tag (e.g. `#CALC_MV`) that appears in both the
 methodology doc and the implementing function's doc comment. To trace from
 spec to code or vice versa: `grep -r CALC_MV`.
 
-| Tag                | Calculation            | Source                    |
-|--------------------|------------------------|---------------------------|
-| `#CALC_POS_AGG`    | Position aggregation   | `calc/aggregation.rs`     |
-| `#CALC_MV`         | Market value           | `calc/market_value.rs`    |
-| `#CALC_VCHG`       | Value change           | `calc/value_change.rs`    |
-| `#CALC_LEDGER_BAL` | Ledger balance         | `accounting/balance.rs`   |
-| `#CALC_REPORT`     | Portfolio report       | `reports/portfolio.rs`    |
+| Tag                | Calculation            | Source                                    |
+|--------------------|------------------------|-------------------------------------------|
+| `#CALC_POS_AGG`    | Position aggregation   | `crates/calce-core/src/calc/aggregation.rs`     |
+| `#CALC_MV`         | Market value           | `crates/calce-core/src/calc/market_value.rs`    |
+| `#CALC_VCHG`       | Value change           | `crates/calce-core/src/calc/value_change.rs`    |
+| `#CALC_LEDGER_BAL` | Ledger balance         | `crates/calce-core/src/accounting/balance.rs`   |
+| `#CALC_REPORT`     | Portfolio report       | `crates/calce-core/src/reports/portfolio.rs`    |
 
 When adding a new calculation you **must**:
 1. Add a section in `docs/calculations/methodology.md` with a new `#CALC_*` tag
@@ -74,5 +81,12 @@ When making significant changes in calculations check that documentation is up t
 ```sh
 cargo build
 cargo test
-cargo clippy -- -D warnings
+cargo clippy --workspace -- -D warnings
+```
+
+### Python bindings
+
+```sh
+maturin develop -m crates/calce-python/Cargo.toml
+pytest crates/calce-python/tests/
 ```

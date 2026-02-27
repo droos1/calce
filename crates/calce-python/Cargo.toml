@@ -1,0 +1,13 @@
+[package]
+name = "calce-python"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "calce"
+crate-type = ["cdylib"]
+
+[dependencies]
+calce-core = { path = "../calce-core" }
+pyo3 = { version = "0.24", features = ["extension-module", "chrono"] }
+chrono = { version = "0.4", default-features = false, features = ["std"] }

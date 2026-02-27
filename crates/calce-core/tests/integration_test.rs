@@ -1,21 +1,21 @@
 use chrono::NaiveDate;
 
-use calce::auth::{Role, SecurityContext};
-use calce::engine::CalcEngine;
-use calce::calc::market_value::value_positions;
-use calce::context::CalculationContext;
-use calce::domain::account::AccountId;
-use calce::domain::currency::Currency;
-use calce::domain::fx_rate::FxRate;
-use calce::domain::instrument::InstrumentId;
-use calce::calc::aggregation::aggregate_positions;
-use calce::domain::price::Price;
-use calce::domain::quantity::Quantity;
-use calce::domain::trade::Trade;
-use calce::domain::user::UserId;
-use calce::error::CalceError;
-use calce::services::market_data::InMemoryMarketDataService;
-use calce::services::user_data::InMemoryUserDataService;
+use calce_core::auth::{Role, SecurityContext};
+use calce_core::engine::CalcEngine;
+use calce_core::calc::market_value::value_positions;
+use calce_core::context::CalculationContext;
+use calce_core::domain::account::AccountId;
+use calce_core::domain::currency::Currency;
+use calce_core::domain::fx_rate::FxRate;
+use calce_core::domain::instrument::InstrumentId;
+use calce_core::calc::aggregation::aggregate_positions;
+use calce_core::domain::price::Price;
+use calce_core::domain::quantity::Quantity;
+use calce_core::domain::trade::Trade;
+use calce_core::domain::user::UserId;
+use calce_core::error::CalceError;
+use calce_core::services::market_data::InMemoryMarketDataService;
+use calce_core::services::user_data::InMemoryUserDataService;
 
 fn setup_multi_currency_scenario() -> (
     InMemoryMarketDataService,
@@ -214,12 +214,12 @@ fn value_positions_multi_currency() {
     market_data.add_fx_rate(FxRate::new(eur, sek, 11.4), date);
 
     let positions = vec![
-        calce::domain::position::Position {
+        calce_core::domain::position::Position {
             instrument_id: aapl,
             quantity: Quantity::new(80.0),
             currency: usd,
         },
-        calce::domain::position::Position {
+        calce_core::domain::position::Position {
             instrument_id: vow3,
             quantity: Quantity::new(50.0),
             currency: eur,
