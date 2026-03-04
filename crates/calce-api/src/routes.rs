@@ -24,7 +24,6 @@ pub struct CalcParams {
 #[derive(Deserialize)]
 pub struct VolatilityParams {
     pub as_of_date: NaiveDate,
-    pub base_currency: String,
     #[serde(default = "default_lookback")]
     pub lookback_days: u32,
 }
@@ -81,22 +80,15 @@ pub async fn portfolio_report(
 
 pub async fn volatility(
     State(state): State<AppState>,
-    Auth(security_ctx): Auth,
     Path(instrument_id): Path<String>,
     Query(params): Query<VolatilityParams>,
 ) -> Result<Json<VolatilityResult>, ApiError> {
-    let base_currency = parse_currency(&params.base_currency)?;
-    let ctx = CalculationContext::new(base_currency, params.as_of_date);
     let instrument = InstrumentId::new(instrument_id);
-
-    // Volatility is instrument-scoped — engine is only used for consistency
-    let engine = CalcEngine::new(
-        &ctx,
-        &security_ctx,
+    let result = calce_core::calc::volatility::calculate_volatility(
+        &instrument,
+        params.as_of_date,
+        params.lookback_days,
         state.market_data.as_ref(),
-        state.user_data.as_ref(),
-    );
-
-    let result = engine.volatility(&instrument, params.lookback_days)?;
+    )?;
     Ok(Json(result))
 }
