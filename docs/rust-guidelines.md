@@ -2,6 +2,57 @@
 
 Coding conventions and patterns specific to this codebase. Add to this as patterns emerge.
 
+## Workspace Architecture
+
+Four crates with clear responsibilities:
+
+```
+calce-core          ← no heavy deps (chrono, decimal, thiserror)
+    ↑         ↑
+calce-data    calce-python
+(sqlx, etc)   (pyo3)
+    ↑
+calce-api
+(axum, tokio)
+```
+
+| Crate | Responsibility | Heavy deps |
+|-------|---------------|------------|
+| `calce-core` | Domain types, service traits, calc logic, reports, accounting | None |
+| `calce-data` | Real DB implementations of service traits | sqlx, tokio |
+| `calce-api` | HTTP server, wires data + core together | axum, tokio |
+| `calce-python` | Python bindings, wraps core | pyo3 |
+
+**Key rules:**
+- `calce-core` never depends on DB or async runtimes. It stays pure and fast to compile.
+- Service traits (`MarketDataService`, `UserDataService`) are defined in `calce-core`. `calce-data` implements them with real databases.
+- `calce-python` depends only on `calce-core`, keeping the cdylib small and free of DB deps.
+- `calce-api` is the only crate that depends on both `calce-core` and `calce-data`.
+
+## In-Memory Service Implementations
+
+The `InMemory*Service` types in `services/` exist for testing only. They must be gated behind `#[cfg(test)]` or a `test-support` feature flag so they are never available in production builds:
+
+```rust
+// services/market_data.rs
+
+pub trait MarketDataService { ... }
+
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Default)]
+pub struct InMemoryMarketDataService { ... }
+```
+
+Use the `test-support` feature when another crate needs the in-memory impls for its own tests (e.g. `calce-python` integration tests):
+
+```toml
+# calce-python/Cargo.toml
+[dev-dependencies]
+calce-core = { path = "../calce-core", features = ["test-support"] }
+```
+
+Within `calce-core` itself, `#[cfg(test)]` is sufficient since unit tests automatically have access.
+
 ## Domain Types Are Data Carriers
 
 Domain types (`domain/`) hold data and nothing more. They provide:

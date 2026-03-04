@@ -1,6 +1,8 @@
 macro_rules! string_id {
     ($name:ident) => {
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+        #[cfg_attr(feature = "serde", serde(transparent))]
         pub struct $name(String);
 
         impl $name {

@@ -14,6 +14,7 @@ use crate::services::market_data::MarketDataService;
 /// feeds that snapshot into `value_change_summary_from` so the current-date
 /// valuation is never duplicated.
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PortfolioReport {
     pub market_value: MarketValueResult,
     pub value_changes: ValueChangeSummary,

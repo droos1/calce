@@ -6,6 +6,7 @@ use super::currency::Currency;
 /// 1 USD = 10.5 SEK. The rate carries its currency pair so that multiplying
 /// Money(USD) by FxRate(USD->SEK) "cancels" USD and produces SEK.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FxRate {
     pub from: Currency,
     pub to: Currency,

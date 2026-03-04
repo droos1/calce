@@ -2,6 +2,8 @@ use std::ops::Add;
 
 /// Positive = long, negative = short.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct Quantity(f64);
 
 impl Quantity {

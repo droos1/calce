@@ -9,6 +9,7 @@ use crate::error::CalceResult;
 use crate::services::market_data::MarketDataService;
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ValuedPosition {
     pub instrument_id: InstrumentId,
     pub quantity: Quantity,
@@ -19,6 +20,7 @@ pub struct ValuedPosition {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MarketValueResult {
     pub positions: Vec<ValuedPosition>,
     pub total: Money,

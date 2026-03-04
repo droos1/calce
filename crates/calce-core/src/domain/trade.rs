@@ -9,6 +9,7 @@ use super::user::UserId;
 
 /// Quantity is signed: positive = buy, negative = sell.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Trade {
     pub user_id: UserId,
     pub account_id: AccountId,

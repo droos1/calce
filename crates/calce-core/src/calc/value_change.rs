@@ -10,6 +10,7 @@ use super::aggregation::aggregate_positions;
 use super::market_value::{value_positions, MarketValueResult};
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ValueChange {
     pub current: Money,
     pub previous: Money,
@@ -19,6 +20,7 @@ pub struct ValueChange {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ValueChangeSummary {
     pub market_value: Money,
     pub daily: ValueChange,

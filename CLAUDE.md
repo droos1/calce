@@ -7,18 +7,26 @@ Financial calculation engine for portfolio tracking.
 ```
 Cargo.toml                  — workspace root
 crates/
-├── calce-core/             — core Rust library
+├── calce-core/             — core Rust library (no DB/async deps)
 │   ├── src/
 │   │   ├── accounting/     — exact-precision ledger arithmetic (Decimal)
 │   │   ├── calc/           — pure business logic, no side effects
 │   │   ├── reports/        — composed views bundling multiple calc primitives
-│   │   ├── services/       — trait-based data access, in-memory test impls
+│   │   ├── services/       — service traits + in-memory test impls
 │   │   └── domain/         — data types only, no business logic
 │   └── tests/
-└── calce-python/           — PyO3 bindings (cdylib)
+├── calce-data/             — real DB implementations of service traits
+│   └── src/
+├── calce-api/              — HTTP server, wires data + core
+│   └── src/
+└── calce-python/           — PyO3 bindings (depends on core only)
     ├── src/                — Rust binding code
     └── tests/              — pytest tests
 ```
+
+`calce-core` defines service traits; `calce-data` implements them against real databases.
+`calce-core` has no DB or async dependencies — this keeps it fast to compile and easy to test.
+See `docs/rust-guidelines.md` for the full architecture rationale.
 
 Domain types are data carriers. Business logic belongs in `calc/`.
 Intrinsic operations (e.g. `Money::convert`, `FxRate::invert`) are fine on domain types.

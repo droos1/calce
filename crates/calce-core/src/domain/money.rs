@@ -5,6 +5,7 @@ use super::fx_rate::FxRate;
 
 /// E.g. converting Money(EUR) with FxRate(USD->SEK) is a mismatch.
 #[derive(Debug, Clone, thiserror::Error)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[error("FX rate expects {expected}, but money is in {actual}")]
 pub struct CurrencyMismatch {
     pub expected: Currency,
@@ -12,6 +13,7 @@ pub struct CurrencyMismatch {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Money {
     pub amount: f64,
     pub currency: Currency,
