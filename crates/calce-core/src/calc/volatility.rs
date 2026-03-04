@@ -26,7 +26,7 @@ pub struct VolatilityResult {
 /// # Errors
 ///
 /// Returns `InsufficientData` when:
-/// - fewer than 2 valid (positive) prices exist in the lookback window
+/// - fewer than 3 valid (positive) prices exist in the lookback window
 /// - the earliest valid price is less than 60 days before `as_of_date`
 /// - fewer than 80% of price records in the period have positive values
 /// - the computed standard deviation is NaN or infinite
@@ -39,15 +39,15 @@ pub fn calculate_volatility(
     let from = as_of_date - chrono::Days::new(u64::from(lookback_days));
     let all_prices = market_data.get_price_history(instrument, from, as_of_date)?;
 
-    let valid: Vec<(NaiveDate, Price)> = all_prices
+    let prices: Vec<(NaiveDate, Price)> = all_prices
         .iter()
         .filter(|(_, p)| p.value() > 0.0)
         .copied()
         .collect();
 
-    validate(instrument, as_of_date, &all_prices, &valid)?;
+    validate(instrument, as_of_date, &all_prices, &prices)?;
 
-    let log_returns: Vec<f64> = valid
+    let log_returns: Vec<f64> = prices
         .windows(2)
         .map(|w| (w[1].1.value() / w[0].1.value()).ln())
         .collect();
@@ -63,16 +63,12 @@ pub fn calculate_volatility(
 
     let annualized_vol = daily_vol * TRADING_DAYS_PER_YEAR.sqrt();
 
-    // Safe: validate() ensures valid has at least 2 entries.
-    let start_date = valid[0].0;
-    let end_date = valid[valid.len() - 1].0;
-
     Ok(VolatilityResult {
         annualized_volatility: annualized_vol,
         daily_volatility: daily_vol,
         num_observations: log_returns.len(),
-        start_date,
-        end_date,
+        start_date: prices[0].0,
+        end_date: prices[prices.len() - 1].0,
     })
 }
 
@@ -80,32 +76,35 @@ fn validate(
     instrument: &InstrumentId,
     as_of_date: NaiveDate,
     all_prices: &[(NaiveDate, Price)],
-    valid: &[(NaiveDate, Price)],
+    prices: &[(NaiveDate, Price)],
 ) -> CalceResult<()> {
     let err = |reason: &str| CalceError::InsufficientData {
         instrument: instrument.clone(),
         reason: reason.into(),
     };
 
-    if valid.len() < 2 {
-        return Err(err("fewer than 2 valid prices"));
+    // Need at least 3 prices to produce 2 returns for a meaningful std dev.
+    if prices.len() < 3 {
+        return Err(err("fewer than 3 valid prices"));
     }
 
-    let first_date = valid[0].0;
+    let first_date = prices[0].0;
     if (as_of_date - first_date).num_days() < MIN_HISTORY_DAYS {
-        return Err(err("need at least 60 days of history"));
+        return Err(err("less than 60 days of history"));
     }
 
     // Completeness: of all records from first valid price onward,
     // at least 80% must be positive.
     let records_in_period = all_prices.iter().filter(|(d, _)| *d >= first_date).count();
-    if records_in_period > 0 && valid.len() * 100 / records_in_period < 80 {
+    if records_in_period > 0 && prices.len() * 100 / records_in_period < 80 {
         return Err(err("less than 80% price coverage"));
     }
 
     Ok(())
 }
 
+// TODO: if we add more stats primitives (correlation, Sharpe, Monte Carlo),
+// consider replacing with the `statrs` crate instead of hand-rolling.
 #[allow(clippy::cast_precision_loss)] // price counts will never exceed 2^52
 fn sample_std_dev(values: &[f64]) -> f64 {
     let n = values.len();
@@ -130,7 +129,7 @@ mod tests {
         NaiveDate::from_ymd_opt(year, month, day).unwrap()
     }
 
-    /// Generate consecutive daily prices starting from `start` for `count` days.
+    /// Add consecutive daily prices starting from `start`.
     fn add_prices(
         md: &mut InMemoryMarketDataService,
         instrument: &InstrumentId,
@@ -188,10 +187,11 @@ mod tests {
     }
 
     #[test]
-    fn fewer_than_two_prices_fails() {
+    fn fewer_than_three_prices_fails() {
         let inst = InstrumentId::new("LONELY");
         let mut md = InMemoryMarketDataService::new();
         md.add_price(&inst, date(2025, 1, 1), Price::new(100.0));
+        md.add_price(&inst, date(2025, 3, 15), Price::new(105.0));
 
         let result = calculate_volatility(&inst, date(2025, 6, 1), 365, &md);
 
