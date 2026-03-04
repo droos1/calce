@@ -85,6 +85,7 @@ Now implement the calculation in `calce-core`:
    - Add `# Errors` and `# Panics` doc sections as required by clippy::pedantic
 3. If this is a composed calculation, add it to `crates/calce-core/src/reports/`.
 4. Wire it into `CalcEngine` in `crates/calce-core/src/engine.rs` if it should be accessible as a top-level engine operation.
+5. If you added a new `CalceError` variant, update the exhaustive matches in **both** `crates/calce-api/src/error.rs` and `crates/calce-python/src/errors.rs` — the compiler will catch this but it's easy to miss until you build the full workspace.
 
 Run tests and clippy:
 ```
@@ -112,7 +113,7 @@ This catches issues that unit tests with synthetic data may miss (e.g. missing F
 
 Once the core calculation works and sanity check passes:
 
-1. **API endpoint** — Add a route in `crates/calce-api/src/routes.rs` and register it in `main.rs`. Follow the existing handler pattern (extract auth, parse query params, construct `CalcEngine`, call method, return JSON).
+1. **API endpoint** — Add a route in `crates/calce-api/src/routes.rs` and register it in `main.rs`. Consider whether the calculation is **user-scoped** (needs auth, base_currency, CalcEngine) or **instrument-scoped** (only needs market data — call the calc function directly, skip auth/engine/base_currency).
 
 2. **Python bindings** — Add a method to the Python module in `crates/calce-python/src/lib.rs` following the existing pattern. Include a Python docstring explaining inputs and return value.
 
