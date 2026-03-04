@@ -14,6 +14,18 @@ pub trait MarketDataService {
     /// Returns `PriceNotFound` if no price is available.
     fn get_price(&self, instrument: &InstrumentId, date: NaiveDate) -> CalceResult<Price>;
 
+    /// Returns all available prices for an instrument in `[from, to]`, sorted by date.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PriceNotFound` if no prices exist in the range.
+    fn get_price_history(
+        &self,
+        instrument: &InstrumentId,
+        from: NaiveDate,
+        to: NaiveDate,
+    ) -> CalceResult<Vec<(NaiveDate, Price)>>;
+
     /// # Errors
     ///
     /// Returns `FxRateNotFound` if no rate is available.
@@ -56,6 +68,28 @@ impl MarketDataService for InMemoryMarketDataService {
                 instrument: instrument.clone(),
                 date,
             })
+    }
+
+    fn get_price_history(
+        &self,
+        instrument: &InstrumentId,
+        from: NaiveDate,
+        to: NaiveDate,
+    ) -> CalceResult<Vec<(NaiveDate, Price)>> {
+        let mut result: Vec<(NaiveDate, Price)> = self
+            .prices
+            .iter()
+            .filter(|((id, d), _)| id == instrument && *d >= from && *d <= to)
+            .map(|((_, d), p)| (*d, *p))
+            .collect();
+        result.sort_by_key(|(d, _)| *d);
+        if result.is_empty() {
+            return Err(CalceError::PriceNotFound {
+                instrument: instrument.clone(),
+                date: from,
+            });
+        }
+        Ok(result)
     }
 
     fn get_fx_rate(

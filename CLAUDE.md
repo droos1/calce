@@ -69,13 +69,12 @@ Each calculation has a tag (e.g. `#CALC_MV`) that appears in both the
 methodology doc and the implementing function's doc comment. To trace from
 spec to code or vice versa: `grep -r CALC_MV`.
 
+Examples:
 | Tag                | Calculation            | Source                                    |
 |--------------------|------------------------|-------------------------------------------|
 | `#CALC_POS_AGG`    | Position aggregation   | `crates/calce-core/src/calc/aggregation.rs`     |
 | `#CALC_MV`         | Market value           | `crates/calce-core/src/calc/market_value.rs`    |
 | `#CALC_VCHG`       | Value change           | `crates/calce-core/src/calc/value_change.rs`    |
-| `#CALC_LEDGER_BAL` | Ledger balance         | `crates/calce-core/src/accounting/balance.rs`   |
-| `#CALC_REPORT`     | Portfolio report       | `crates/calce-core/src/reports/portfolio.rs`    |
 
 When adding a new calculation you **must**:
 1. Add a section in `docs/calculations/methodology.md` with a new `#CALC_*` tag

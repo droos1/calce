@@ -60,6 +60,12 @@ def run_api(c, release=False):
 
 
 @task
+def dev(c):
+    """Run the API server with auto-reload on file changes (requires cargo-watch)."""
+    c.run("cargo watch -x 'run -p calce-api'", pty=True)
+
+
+@task
 def bench(c, duration="10s", threads=4, connections=50):
     """Load test the API (requires running server). Uses wrk."""
     c.run(

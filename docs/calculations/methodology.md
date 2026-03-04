@@ -124,6 +124,77 @@ Result:
 
 ---
 
+### 4.5 Volatility `#CALC_VOL`
+
+Historical realized volatility for a single instrument, computed as the
+annualized standard deviation of logarithmic daily returns.
+
+**Inputs:**
+
+- `instrument` — the instrument to compute volatility for
+- `as_of_date` — the reference date (typically today)
+- `lookback_days` — number of calendar days of history to use
+
+**Step 1 — Collect prices:**
+
+Retrieve all available closing prices for the instrument in the window
+`[as_of_date − lookback_days, as_of_date]`. Discard any prices that are zero
+or negative — these represent missing or invalid data, not genuine market
+observations.
+
+**Step 2 — Validate data quality:**
+
+The remaining valid prices must satisfy three conditions, otherwise the calculation fails:
+
+1. *Minimum count* — at least 2 valid prices (otherwise no return can be
+   computed).
+2. *Minimum history depth* — the earliest valid price must be at least 60
+   calendar days before `as_of_date`, ensuring the sample is not too short
+   to be meaningful.
+3. *Completeness* — of all price records returned by the data source for
+   the period `[earliest_valid_price_date, as_of_date]`, at least 80% must
+   have a positive (non-zero) value. This catches instruments where the
+   data provider returns rows with zero or null prices rather than omitting
+   them entirely.
+
+
+**Step 3 — Compute log returns:**
+
+    r_i = ln(P_i / P_{i-1})    for consecutive valid prices P_0 .. P_n
+
+**Step 4 — Compute volatility:**
+
+    daily_volatility     = sample_std_dev(r_0 .. r_{n-1})
+    annualized_volatility = daily_volatility * sqrt(252)
+
+Sample standard deviation uses Bessel's correction (divide by n-1).
+
+**Result:**
+
+    VolatilityResult {
+        annualized_volatility: f64,
+        daily_volatility:      f64,
+        num_observations:      usize,   // count of returns = valid prices - 1
+        start_date:            date,    // first valid price date
+        end_date:              date,    // last valid price date
+    }
+
+When the standard deviation is NaN or infinite (e.g. all prices identical),
+`InsufficientData` is returned.
+
+This calculation requires a `get_price_history` method on `MarketDataService`
+that returns all available prices for an instrument over a date range.
+
+**TODO:** This implementation assumes daily trading and annualizes with
+`√252`. Instruments that trade monthly (e.g. some mutual funds with monthly
+NAVs) should annualize with `√12` instead. Rather than auto-detecting
+frequency from the price data — which is fragile and can misclassify illiquid
+instruments — trading frequency should be an explicit attribute on the
+instrument metadata. When instrument metadata is available, add a frequency
+parameter and branch the annualization factor accordingly.
+
+---
+
 ## 5. Accounting
 
 ### 5.1 Ledger Balance `#CALC_LEDGER_BAL`

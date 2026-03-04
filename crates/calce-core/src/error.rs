@@ -28,6 +28,12 @@ pub enum CalceError {
     #[error("No trades found for user {0}")]
     NoTradesFound(UserId),
 
+    #[error("Insufficient data for {instrument}: {reason}")]
+    InsufficientData {
+        instrument: InstrumentId,
+        reason: String,
+    },
+
     #[error("Currency mismatch: {0}")]
     CurrencyMismatch(#[from] CurrencyMismatch),
 }
