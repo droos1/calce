@@ -23,22 +23,17 @@ pub fn seed_market_data() -> InMemoryMarketDataService {
     let aapl = InstrumentId::new("AAPL");
     let vow3 = InstrumentId::new("VOW3");
 
-    let today = date(2025, 3, 15);
-    let day_ago = date(2025, 3, 14);
-    let week_ago = date(2025, 3, 8);
-    let year_ago = date(2024, 3, 15);
-    let prev_year_end = date(2024, 12, 31);
+    let today = date(2025, 3, 14); // Friday
+    let year_ago = date(2024, 3, 1); // start a bit before year-ago comparison dates
 
     // Daily price history (weekdays only) from year_ago to today.
     // Uses a deterministic sine-wave wobble over a linear trend.
     add_daily_prices(&mut svc, &aapl, year_ago, today, 160.0, 200.0, 0.02);
     add_daily_prices(&mut svc, &vow3, year_ago, today, 100.0, 120.0, 0.03);
 
-    // FX rates at each date
-    for d in [today, day_ago, week_ago, year_ago, prev_year_end] {
-        svc.add_fx_rate(FxRate::new(usd, sek, 10.5), d);
-        svc.add_fx_rate(FxRate::new(eur, sek, 11.2), d);
-    }
+    // Constant FX rates for every weekday in the period
+    add_daily_fx_rates(&mut svc, year_ago, today, usd, sek, 10.5);
+    add_daily_fx_rates(&mut svc, year_ago, today, eur, sek, 11.2);
 
     svc
 }
@@ -66,6 +61,23 @@ fn add_daily_prices(
             let trend = start_price + slope * days_elapsed;
             let noise = (days_elapsed * 0.3).sin() * trend * noise_amplitude;
             svc.add_price(instrument, d, Price::new(trend + noise));
+        }
+        d = d + chrono::Days::new(1);
+    }
+}
+
+fn add_daily_fx_rates(
+    svc: &mut InMemoryMarketDataService,
+    from: NaiveDate,
+    to: NaiveDate,
+    base: Currency,
+    quote: Currency,
+    rate: f64,
+) {
+    let mut d = from;
+    while d <= to {
+        if d.weekday().number_from_monday() <= 5 {
+            svc.add_fx_rate(FxRate::new(base, quote, rate), d);
         }
         d = d + chrono::Days::new(1);
     }
@@ -111,7 +123,7 @@ mod tests {
     #[test]
     fn volatility_sanity_check_with_seed_data() {
         let md = seed_market_data();
-        let today = date(2025, 3, 15);
+        let today = date(2025, 3, 14);
         let aapl = InstrumentId::new("AAPL");
         let vow3 = InstrumentId::new("VOW3");
 
