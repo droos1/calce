@@ -12,6 +12,10 @@ debug/
 *.iws
 *.ipr
 
+# Benchmarks (standalone crates, not part of workspace)
+benchmarks/**/target/
+benchmarks/**/Cargo.lock
+
 # OS
 .DS_Store
 
