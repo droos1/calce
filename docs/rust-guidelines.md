@@ -31,27 +31,12 @@ calce-api
 
 ## In-Memory Service Implementations
 
-The `InMemory*Service` types in `services/` exist for testing only. They must be gated behind `#[cfg(test)]` or a `test-support` feature flag so they are never available in production builds:
+The `InMemory*Service` types in `services/` serve two roles:
 
-```rust
-// services/market_data.rs
+1. **Sync bridge** — `DataLoader` in calce-data loads data async from Postgres, packs it into `InMemoryMarketDataService`, then hands it to sync calce-core calc functions. This is the core async/sync bridging pattern.
+2. **Test doubles** — unit tests construct them directly with known data.
 
-pub trait MarketDataService { ... }
-
-#[cfg(any(test, feature = "test-support"))]
-#[derive(Default)]
-pub struct InMemoryMarketDataService { ... }
-```
-
-Use the `test-support` feature when another crate needs the in-memory impls for its own tests (e.g. `calce-python` integration tests):
-
-```toml
-# calce-python/Cargo.toml
-[dev-dependencies]
-calce-core = { path = "../calce-core", features = ["test-support"] }
-```
-
-Within `calce-core` itself, `#[cfg(test)]` is sufficient since unit tests automatically have access.
+Because of role 1, these types are always available (not gated behind `#[cfg(test)]`). They are lightweight data holders with no database dependencies.
 
 ## Domain Types Are Data Carriers
 
@@ -249,13 +234,16 @@ This avoids circular dependencies (domain types don't import `CalceError`) and k
 let mut market_data = InMemoryMarketDataService::new();
 market_data.add_price(&aapl, date, Price::new(150.0));
 let ctx = CalculationContext::new(usd, date);
-let result = value_positions(&positions, &ctx, &market_data).unwrap();
+let outcome = value_positions(&positions, &ctx, &market_data).unwrap();
+assert_eq!(outcome.value.total.amount, 15000.0);
 ```
 
-**Engine/integration tests** — full pipeline including auth and trade loading:
+**Integration tests** — full pipeline including auth, trade loading, and aggregation:
 ```rust
-let engine = CalcEngine::new(&ctx, &security_ctx, &market_data, &user_data);
-let result = engine.market_value_for_user(&alice).unwrap();
+let security_ctx = SecurityContext::new(alice.clone(), Role::User);
+let trades = user_data.get_trades(&security_ctx, &alice).unwrap();
+let positions = aggregate_positions(&trades, date).unwrap();
+let outcome = value_positions(&positions, &ctx, &market_data).unwrap();
 ```
 
-Calculation tests are fast and focused. Engine tests verify the wiring (auth, aggregation, delegation).
+Calculation tests are fast and focused. Integration tests verify the wiring (auth, aggregation, data flow).

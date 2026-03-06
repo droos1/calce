@@ -10,11 +10,7 @@ pub trait UserDataService {
     ///
     /// Returns `Unauthorized` if the security context lacks access.
     /// Returns `NoTradesFound` if the user has no trades.
-    fn get_trades(
-        &self,
-        ctx: &SecurityContext,
-        user_id: &UserId,
-    ) -> CalceResult<Vec<Trade>>;
+    fn get_trades(&self, ctx: &SecurityContext, user_id: &UserId) -> CalceResult<Vec<Trade>>;
 }
 
 /// In-memory implementation for testing.
@@ -29,20 +25,26 @@ impl InMemoryUserDataService {
         Self::default()
     }
 
+    #[must_use]
+    pub fn trades_for(&self, user_id: &UserId) -> Option<Vec<Trade>> {
+        self.trades.get(user_id).cloned()
+    }
+
     pub fn add_trade(&mut self, trade: Trade) {
         self.trades
             .entry(trade.user_id.clone())
             .or_default()
             .push(trade);
     }
+
+    #[must_use]
+    pub fn user_count(&self) -> usize {
+        self.trades.len()
+    }
 }
 
 impl UserDataService for InMemoryUserDataService {
-    fn get_trades(
-        &self,
-        ctx: &SecurityContext,
-        user_id: &UserId,
-    ) -> CalceResult<Vec<Trade>> {
+    fn get_trades(&self, ctx: &SecurityContext, user_id: &UserId) -> CalceResult<Vec<Trade>> {
         if !ctx.can_access(user_id) {
             return Err(CalceError::Unauthorized {
                 requester: ctx.user_id.clone(),

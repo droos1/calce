@@ -24,11 +24,8 @@ impl MarketData {
     }
 
     fn add_price(&mut self, instrument_id: &str, date: NaiveDate, price: f64) {
-        self.inner.add_price(
-            &InstrumentId::new(instrument_id),
-            date,
-            Price::new(price),
-        );
+        self.inner
+            .add_price(&InstrumentId::new(instrument_id), date, Price::new(price));
     }
 
     fn add_fx_rate(
@@ -42,6 +39,10 @@ impl MarketData {
             FxRate::new(from_currency.inner, to_currency.inner, rate),
             date,
         );
+    }
+
+    fn freeze(&mut self) {
+        self.inner.freeze();
     }
 }
 

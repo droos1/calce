@@ -3,101 +3,254 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Calce API Explorer</title>
+<title>Calce Dev Console</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: #0d1117; color: #c9d1d9; padding: 24px; max-width: 1200px; margin: 0 auto; }
-  h1 { font-size: 20px; margin-bottom: 20px; color: #58a6ff; }
-  .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 20px; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: #0d1117; color: #c9d1d9; padding: 20px; max-width: 1400px; margin: 0 auto; }
+
+  /* Header */
+  .header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+  .header h1 { font-size: 18px; color: #58a6ff; }
+  .header .server-info { font-size: 12px; color: #8b949e; margin-left: auto; }
+  .header .server-info.connected { color: #3fb950; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid #30363d; margin-bottom: 16px; }
+  .tab { padding: 10px 20px; cursor: pointer; font-size: 14px; color: #8b949e; border-bottom: 2px solid transparent; transition: all 0.15s; }
+  .tab:hover { color: #c9d1d9; }
+  .tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Controls */
+  .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 16px; }
   .field { display: flex; flex-direction: column; gap: 4px; }
-  .field label { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
-  .field input, .field select { background: #161b22; border: 1px solid #30363d; color: #c9d1d9; padding: 8px 12px; border-radius: 6px; font-size: 14px; font-family: inherit; }
+  .field label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .field input, .field select { background: #161b22; border: 1px solid #30363d; color: #c9d1d9; padding: 7px 10px; border-radius: 6px; font-size: 13px; font-family: inherit; }
   .field input:focus, .field select:focus { outline: none; border-color: #58a6ff; }
-  .buttons { display: flex; gap: 8px; }
-  button { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-family: inherit; }
+  .field input[type="number"] { width: 80px; }
+  button { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: inherit; }
   button:hover { background: #30363d; }
   button.primary { background: #238636; border-color: #238636; color: #fff; }
   button.primary:hover { background: #2ea043; }
-  .status { font-size: 13px; padding: 8px 0; color: #8b949e; }
+  button.sm { padding: 4px 10px; font-size: 12px; }
+
+  /* Status */
+  .status { font-size: 12px; padding: 6px 0; color: #8b949e; }
   .status.error { color: #f85149; }
   .status.ok { color: #3fb950; }
-  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  /* Panels */
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
-  .panel-header { padding: 10px 16px; background: #21262d; border-bottom: 1px solid #30363d; font-size: 13px; font-weight: 600; color: #8b949e; display: flex; justify-content: space-between; }
-  .panel-body { padding: 16px; overflow-x: auto; }
-  pre { font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; padding: 8px; border-bottom: 1px solid #30363d; color: #8b949e; font-weight: 600; }
-  td { padding: 8px; border-bottom: 1px solid #21262d; }
+  .panel.full { grid-column: 1 / -1; }
+  .panel-header { padding: 8px 14px; background: #21262d; border-bottom: 1px solid #30363d; font-size: 12px; font-weight: 600; color: #8b949e; display: flex; justify-content: space-between; align-items: center; }
+  .panel-body { padding: 14px; overflow-x: auto; max-height: 600px; overflow-y: auto; }
+  pre { font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #30363d; color: #8b949e; font-weight: 600; position: sticky; top: 0; background: #161b22; }
+  td { padding: 6px 8px; border-bottom: 1px solid #21262d; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .change-pos { color: #3fb950; }
   .change-neg { color: #f85149; }
   .total-row td { border-top: 2px solid #30363d; font-weight: 600; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover { background: #1c2129; }
+
+  /* Stats grid */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+  .stat-card { background: #21262d; border-radius: 6px; padding: 14px; text-align: center; }
+  .stat-card .value { font-size: 24px; font-weight: 700; color: #58a6ff; }
+  .stat-card .label { font-size: 11px; color: #8b949e; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Section headers */
+  .section-header { font-size: 14px; font-weight: 600; color: #c9d1d9; margin: 20px 0 10px; }
+  .section-header:first-child { margin-top: 0; }
+
+  /* Endpoint sections */
+  .endpoint-section { margin-bottom: 20px; padding: 14px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+  .endpoint-section h3 { font-size: 13px; color: #58a6ff; margin-bottom: 10px; }
+
+  /* Loading */
+  .loading { color: #8b949e; font-style: italic; padding: 20px; text-align: center; }
+
   @media (max-width: 800px) { .panels { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 
-<h1>Calce API Explorer</h1>
+<div class="header">
+  <h1>Calce Dev Console</h1>
+  <div class="server-info" id="serverInfo">Connecting...</div>
+</div>
 
-<div class="controls">
-  <div class="field">
-    <label>API Base URL</label>
-    <input type="text" id="baseUrl" value="http://localhost:3000">
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('calc')">API Explorer</div>
+  <div class="tab" onclick="switchTab('data')">Data Browser</div>
+</div>
+
+<!-- ═══ API Explorer Tab ═══ -->
+<div class="tab-content active" id="tab-calc">
+
+  <div class="controls">
+    <div class="field">
+      <label>User ID</label>
+      <input type="text" id="userId" value="alice" style="width:120px">
+    </div>
+    <div class="field">
+      <label>As-of Date</label>
+      <input type="date" id="asOfDate">
+    </div>
+    <div class="field">
+      <label>Base Currency</label>
+      <select id="baseCurrency">
+        <option value="SEK" selected>SEK</option>
+        <option value="USD">USD</option>
+        <option value="EUR">EUR</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Role</label>
+      <select id="role">
+        <option value="admin" selected>admin</option>
+        <option value="user">user</option>
+      </select>
+    </div>
   </div>
-  <div class="field">
-    <label>User ID</label>
-    <input type="text" id="userId" value="alice">
+
+  <!-- Market Value -->
+  <div class="endpoint-section">
+    <h3>GET /v1/users/{user_id}/market-value</h3>
+    <div style="margin-bottom:8px">
+      <button class="primary" onclick="fetchMarketValue()">Run</button>
+    </div>
+    <div class="status" id="mvStatus"></div>
+    <div class="panels">
+      <div class="panel"><div class="panel-header"><span>Result</span><span id="mvHttp"></span></div><div class="panel-body" id="mvFormatted"><p class="loading">-</p></div></div>
+      <div class="panel"><div class="panel-header">Raw JSON</div><div class="panel-body"><pre id="mvRaw">-</pre></div></div>
+    </div>
   </div>
-  <div class="field">
-    <label>As-of Date</label>
-    <input type="date" id="asOfDate" value="2025-03-15">
+
+  <!-- Portfolio -->
+  <div class="endpoint-section">
+    <h3>GET /v1/users/{user_id}/portfolio</h3>
+    <div style="margin-bottom:8px">
+      <button class="primary" onclick="fetchPortfolio()">Run</button>
+    </div>
+    <div class="status" id="pfStatus"></div>
+    <div class="panels">
+      <div class="panel"><div class="panel-header"><span>Result</span><span id="pfHttp"></span></div><div class="panel-body" id="pfFormatted"><p class="loading">-</p></div></div>
+      <div class="panel"><div class="panel-header">Raw JSON</div><div class="panel-body"><pre id="pfRaw">-</pre></div></div>
+    </div>
   </div>
-  <div class="field">
-    <label>Base Currency</label>
-    <select id="baseCurrency">
-      <option value="SEK" selected>SEK</option>
-      <option value="USD">USD</option>
-      <option value="EUR">EUR</option>
-    </select>
-  </div>
-  <div class="field">
-    <label>Role</label>
-    <select id="role">
-      <option value="user" selected>user</option>
-      <option value="admin">admin</option>
-    </select>
-  </div>
-  <div class="buttons" style="align-self: end;">
-    <button class="primary" onclick="fetchMarketValue()">Market Value</button>
-    <button class="primary" onclick="fetchPortfolio()">Portfolio</button>
+
+  <!-- Volatility -->
+  <div class="endpoint-section">
+    <h3>GET /v1/instruments/{instrument_id}/volatility</h3>
+    <div class="controls" style="margin-bottom:8px">
+      <div class="field">
+        <label>Instrument</label>
+        <input type="text" id="volInstrument" value="AAPL" style="width:120px">
+      </div>
+      <div class="field">
+        <label>Lookback Days</label>
+        <input type="number" id="volLookback" value="365">
+      </div>
+      <button class="primary" onclick="fetchVolatility()">Run</button>
+    </div>
+    <div class="status" id="volStatus"></div>
+    <div class="panels">
+      <div class="panel"><div class="panel-header"><span>Result</span><span id="volHttp"></span></div><div class="panel-body" id="volFormatted"><p class="loading">-</p></div></div>
+      <div class="panel"><div class="panel-header">Raw JSON</div><div class="panel-body"><pre id="volRaw">-</pre></div></div>
+    </div>
   </div>
 </div>
 
-<div class="status" id="status"></div>
+<!-- ═══ Data Browser Tab ═══ -->
+<div class="tab-content" id="tab-data">
 
-<div class="panels">
-  <div class="panel">
-    <div class="panel-header">
-      <span>Formatted</span>
-      <span id="httpStatus"></span>
+  <div class="section-header">Database Stats</div>
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card"><div class="value">-</div><div class="label">Users</div></div>
+    <div class="stat-card"><div class="value">-</div><div class="label">Instruments</div></div>
+    <div class="stat-card"><div class="value">-</div><div class="label">Trades</div></div>
+    <div class="stat-card"><div class="value">-</div><div class="label">Prices</div></div>
+    <div class="stat-card"><div class="value">-</div><div class="label">FX Rates</div></div>
+  </div>
+
+  <div style="display:grid; grid-template-columns:1fr 2fr; gap:12px; margin-top:16px;">
+    <div>
+      <div class="section-header">Users <button class="sm" onclick="loadUsers()">Refresh</button></div>
+      <div class="panel">
+        <div class="panel-header">Users</div>
+        <div class="panel-body" id="usersTable"><p class="loading">Loading...</p></div>
+      </div>
     </div>
-    <div class="panel-body" id="formatted">
-      <p style="color:#8b949e">Hit a button to make a request</p>
+    <div>
+      <div class="section-header">Instruments <button class="sm" onclick="loadInstruments()">Refresh</button></div>
+      <div class="panel">
+        <div class="panel-header"><span>Instruments</span><span id="instrumentCount"></span></div>
+        <div class="panel-body" id="instrumentsTable"><p class="loading">Loading...</p></div>
+      </div>
     </div>
   </div>
-  <div class="panel">
-    <div class="panel-header">Raw JSON</div>
-    <div class="panel-body">
-      <pre id="raw" style="color:#8b949e">—</pre>
+
+  <!-- Price History -->
+  <div class="section-header">Price History</div>
+  <div class="endpoint-section">
+    <div class="controls" style="margin-bottom:8px">
+      <div class="field">
+        <label>Instrument</label>
+        <input type="text" id="phInstrument" value="AAPL" style="width:120px">
+      </div>
+      <div class="field">
+        <label>From</label>
+        <input type="date" id="phFrom">
+      </div>
+      <div class="field">
+        <label>To</label>
+        <input type="date" id="phTo">
+      </div>
+      <button class="primary" onclick="fetchPriceHistory()">Load</button>
+    </div>
+    <div class="status" id="phStatus"></div>
+    <div class="panels">
+      <div class="panel full">
+        <div class="panel-header"><span>Price Chart</span><span id="phCount"></span></div>
+        <div class="panel-body" id="phChart"><p class="loading">Select an instrument and date range</p></div>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-function params() {
+const BASE_URL = location.origin !== 'null' && location.port === '35701'
+  ? location.origin
+  : 'http://localhost:35701';
+
+// Set default dates
+const today = new Date().toISOString().slice(0, 10);
+document.getElementById('asOfDate').value = today;
+document.getElementById('phTo').value = today;
+const oneYearAgo = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
+document.getElementById('phFrom').value = oneYearAgo;
+
+// ── Tab switching ──────────────────────────────────────────────────────
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'data') loadDataBrowser();
+}
+
+// ── Shared helpers ─────────────────────────────────────────────────────
+
+function calcParams() {
   return {
-    baseUrl: document.getElementById('baseUrl').value.replace(/\/$/, ''),
     userId: document.getElementById('userId').value,
     asOfDate: document.getElementById('asOfDate').value,
     baseCurrency: document.getElementById('baseCurrency').value,
@@ -105,70 +258,80 @@ function params() {
   };
 }
 
-function queryString(p) {
-  return `as_of_date=${p.asOfDate}&base_currency=${p.baseCurrency}`;
+function authHeaders(p) {
+  return { 'X-User-Id': p.userId, 'X-Role': p.role };
 }
 
-async function apiFetch(path) {
-  const p = params();
-  const url = `${p.baseUrl}${path}?${queryString(p)}`;
-  const status = document.getElementById('status');
-  const httpStatus = document.getElementById('httpStatus');
-  status.className = 'status';
-  status.textContent = `GET ${url}`;
+async function apiFetch(path, headers = {}) {
+  const url = `${BASE_URL}${path}`;
+  const res = await fetch(url, { headers });
+  const data = await res.json();
+  return { ok: res.ok, status: res.status, statusText: res.statusText, data };
+}
 
+function setStatus(elId, text, type) {
+  const el = document.getElementById(elId);
+  el.className = 'status' + (type ? ' ' + type : '');
+  el.textContent = text;
+}
+
+function setHttp(elId, status, statusText, ok) {
+  const el = document.getElementById(elId);
+  el.textContent = `${status} ${statusText}`;
+  el.style.color = ok ? '#3fb950' : '#f85149';
+}
+
+function fmt(n) { return n == null ? '-' : n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function pct(n) { return n == null ? '-' : (n * 100).toFixed(2) + '%'; }
+function changeClass(n) { return n > 0 ? 'change-pos' : n < 0 ? 'change-neg' : ''; }
+function sign(n) { return n > 0 ? '+' : ''; }
+function fmtInt(n) { return n == null ? '-' : n.toLocaleString(); }
+
+// ── Server connectivity check ──────────────────────────────────────────
+
+async function checkServer() {
+  const el = document.getElementById('serverInfo');
   try {
-    const res = await fetch(url, {
-      headers: { 'X-User-Id': p.userId, 'X-Role': p.role },
-    });
-    const data = await res.json();
-    httpStatus.textContent = `${res.status} ${res.statusText}`;
-    httpStatus.style.color = res.ok ? '#3fb950' : '#f85149';
-    document.getElementById('raw').textContent = JSON.stringify(data, null, 2);
-
-    if (!res.ok) {
-      status.className = 'status error';
-      status.textContent = `Error: ${data.message || res.statusText}`;
-      document.getElementById('formatted').innerHTML = `<p style="color:#f85149">${data.error}: ${data.message}</p>`;
-      return null;
+    const res = await fetch(`${BASE_URL}/v1/data/stats`);
+    if (res.ok) {
+      el.textContent = `Connected to ${BASE_URL}`;
+      el.className = 'server-info connected';
+    } else {
+      el.textContent = `Server error (${res.status})`;
+      el.className = 'server-info';
     }
-    status.className = 'status ok';
-    status.textContent = `OK — ${new Date().toLocaleTimeString()}`;
-    return data;
+  } catch {
+    el.textContent = `Cannot reach ${BASE_URL}`;
+    el.className = 'server-info';
+  }
+}
+checkServer();
+
+// ── API Explorer: Market Value ─────────────────────────────────────────
+
+async function fetchMarketValue() {
+  const p = calcParams();
+  const path = `/v1/users/${p.userId}/market-value?as_of_date=${p.asOfDate}&base_currency=${p.baseCurrency}`;
+  setStatus('mvStatus', `GET ${BASE_URL}${path}`);
+  try {
+    const r = await apiFetch(path, authHeaders(p));
+    setHttp('mvHttp', r.status, r.statusText, r.ok);
+    document.getElementById('mvRaw').textContent = JSON.stringify(r.data, null, 2);
+    if (!r.ok) {
+      setStatus('mvStatus', `Error: ${r.data.message || r.statusText}`, 'error');
+      document.getElementById('mvFormatted').innerHTML = `<p style="color:#f85149">${r.data.error}: ${r.data.message}</p>`;
+      return;
+    }
+    setStatus('mvStatus', `OK`, 'ok');
+    renderMarketValue(r.data);
   } catch (e) {
-    status.className = 'status error';
-    status.textContent = `Network error: ${e.message}. Is the API server running?`;
-    httpStatus.textContent = '';
-    document.getElementById('formatted').innerHTML = `<p style="color:#f85149">${e.message}</p>`;
-    document.getElementById('raw').textContent = '—';
-    return null;
+    setStatus('mvStatus', `Network error: ${e.message}`, 'error');
   }
 }
 
-function fmt(n) {
-  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function pct(n) {
-  if (n == null) return '—';
-  return (n * 100).toFixed(2) + '%';
-}
-
-function changeClass(n) {
-  return n > 0 ? 'change-pos' : n < 0 ? 'change-neg' : '';
-}
-
-function sign(n) {
-  return n > 0 ? '+' : '';
-}
-
-async function fetchMarketValue() {
-  const p = params();
-  const data = await apiFetch(`/v1/users/${p.userId}/market-value`);
-  if (!data) return;
-
+function renderMarketValue(data) {
   let html = `<table>
-    <tr><th>Instrument</th><th>Qty</th><th>Price</th><th>Currency</th><th style="text-align:right">Local MV</th><th style="text-align:right">Base MV (${data.total.currency})</th></tr>`;
+    <tr><th>Instrument</th><th>Qty</th><th>Price</th><th>Ccy</th><th style="text-align:right">Local MV</th><th style="text-align:right">Base MV (${data.total.currency})</th></tr>`;
   for (const pos of data.positions) {
     html += `<tr>
       <td>${pos.instrument_id}</td>
@@ -179,24 +342,39 @@ async function fetchMarketValue() {
       <td class="num">${fmt(pos.market_value_base.amount)}</td>
     </tr>`;
   }
-  html += `<tr class="total-row">
-    <td colspan="5">Total</td>
-    <td class="num">${fmt(data.total.amount)} ${data.total.currency}</td>
-  </tr></table>`;
-  document.getElementById('formatted').innerHTML = html;
+  html += `<tr class="total-row"><td colspan="5">Total</td><td class="num">${fmt(data.total.amount)} ${data.total.currency}</td></tr></table>`;
+  document.getElementById('mvFormatted').innerHTML = html;
 }
 
-async function fetchPortfolio() {
-  const p = params();
-  const data = await apiFetch(`/v1/users/${p.userId}/portfolio`);
-  if (!data) return;
+// ── API Explorer: Portfolio ────────────────────────────────────────────
 
+async function fetchPortfolio() {
+  const p = calcParams();
+  const path = `/v1/users/${p.userId}/portfolio?as_of_date=${p.asOfDate}&base_currency=${p.baseCurrency}`;
+  setStatus('pfStatus', `GET ${BASE_URL}${path}`);
+  try {
+    const r = await apiFetch(path, authHeaders(p));
+    setHttp('pfHttp', r.status, r.statusText, r.ok);
+    document.getElementById('pfRaw').textContent = JSON.stringify(r.data, null, 2);
+    if (!r.ok) {
+      setStatus('pfStatus', `Error: ${r.data.message || r.statusText}`, 'error');
+      document.getElementById('pfFormatted').innerHTML = `<p style="color:#f85149">${r.data.error}: ${r.data.message}</p>`;
+      return;
+    }
+    setStatus('pfStatus', `OK`, 'ok');
+    renderPortfolio(r.data);
+  } catch (e) {
+    setStatus('pfStatus', `Network error: ${e.message}`, 'error');
+  }
+}
+
+function renderPortfolio(data) {
   const mv = data.market_value;
   const vc = data.value_changes;
   const ccy = mv.total.currency;
 
   let html = `<table>
-    <tr><th>Instrument</th><th>Qty</th><th>Price</th><th>Currency</th><th style="text-align:right">Local MV</th><th style="text-align:right">Base MV (${ccy})</th></tr>`;
+    <tr><th>Instrument</th><th>Qty</th><th>Price</th><th>Ccy</th><th style="text-align:right">Local MV</th><th style="text-align:right">Base MV (${ccy})</th></tr>`;
   for (const pos of mv.positions) {
     html += `<tr>
       <td>${pos.instrument_id}</td>
@@ -207,12 +385,9 @@ async function fetchPortfolio() {
       <td class="num">${fmt(pos.market_value_base.amount)}</td>
     </tr>`;
   }
-  html += `<tr class="total-row">
-    <td colspan="5">Total</td>
-    <td class="num">${fmt(mv.total.amount)} ${ccy}</td>
-  </tr></table>`;
+  html += `<tr class="total-row"><td colspan="5">Total</td><td class="num">${fmt(mv.total.amount)} ${ccy}</td></tr></table>`;
 
-  html += `<table style="margin-top:20px">
+  html += `<table style="margin-top:16px">
     <tr><th>Period</th><th style="text-align:right">Previous</th><th style="text-align:right">Current</th><th style="text-align:right">Change</th><th style="text-align:right">%</th></tr>`;
   for (const [label, ch] of [['Daily', vc.daily], ['Weekly', vc.weekly], ['YTD', vc.ytd], ['Yearly', vc.yearly]]) {
     const cls = changeClass(ch.change.amount);
@@ -225,7 +400,231 @@ async function fetchPortfolio() {
     </tr>`;
   }
   html += `</table>`;
-  document.getElementById('formatted').innerHTML = html;
+  document.getElementById('pfFormatted').innerHTML = html;
+}
+
+// ── API Explorer: Volatility ───────────────────────────────────────────
+
+async function fetchVolatility() {
+  const p = calcParams();
+  const inst = document.getElementById('volInstrument').value;
+  const lookback = document.getElementById('volLookback').value;
+  const path = `/v1/instruments/${inst}/volatility?as_of_date=${p.asOfDate}&lookback_days=${lookback}`;
+  setStatus('volStatus', `GET ${BASE_URL}${path}`);
+  try {
+    const r = await apiFetch(path, authHeaders(p));
+    setHttp('volHttp', r.status, r.statusText, r.ok);
+    document.getElementById('volRaw').textContent = JSON.stringify(r.data, null, 2);
+    if (!r.ok) {
+      setStatus('volStatus', `Error: ${r.data.message || r.statusText}`, 'error');
+      document.getElementById('volFormatted').innerHTML = `<p style="color:#f85149">${r.data.error}: ${r.data.message}</p>`;
+      return;
+    }
+    setStatus('volStatus', `OK`, 'ok');
+    renderVolatility(r.data);
+  } catch (e) {
+    setStatus('volStatus', `Network error: ${e.message}`, 'error');
+  }
+}
+
+function renderVolatility(data) {
+  let html = `<table>
+    <tr><th>Metric</th><th style="text-align:right">Value</th></tr>
+    <tr><td>Annualized Volatility</td><td class="num">${pct(data.annualized_volatility)}</td></tr>
+    <tr><td>Daily Volatility</td><td class="num">${pct(data.daily_volatility)}</td></tr>
+    <tr><td>Observations</td><td class="num">${fmtInt(data.num_observations)}</td></tr>
+    <tr><td>Period</td><td>${data.start_date} to ${data.end_date}</td></tr>
+  </table>`;
+  document.getElementById('volFormatted').innerHTML = html;
+}
+
+// ── Data Browser ───────────────────────────────────────────────────────
+
+let dataBrowserLoaded = false;
+
+async function loadDataBrowser() {
+  if (dataBrowserLoaded) return;
+  dataBrowserLoaded = true;
+  loadStats();
+  loadUsers();
+  loadInstruments();
+}
+
+async function loadStats() {
+  try {
+    const r = await apiFetch('/v1/data/stats');
+    if (!r.ok) return;
+    const s = r.data;
+    const cards = [
+      { value: fmtInt(s.user_count), label: 'Users' },
+      { value: fmtInt(s.instrument_count), label: 'Instruments' },
+      { value: fmtInt(s.trade_count), label: 'Trades' },
+      { value: fmtInt(s.price_count), label: 'Prices' },
+      { value: fmtInt(s.fx_rate_count), label: 'FX Rates' },
+    ];
+    document.getElementById('statsGrid').innerHTML = cards
+      .map(c => `<div class="stat-card"><div class="value">${c.value}</div><div class="label">${c.label}</div></div>`)
+      .join('');
+  } catch { /* server not reachable */ }
+}
+
+async function loadUsers() {
+  try {
+    const r = await apiFetch('/v1/data/users');
+    if (!r.ok || r.data.length === 0) {
+      document.getElementById('usersTable').innerHTML = '<p class="loading">No users found</p>';
+      return;
+    }
+    let html = `<table>
+      <tr><th>User ID</th><th>Email</th><th style="text-align:right">Trades</th><th></th></tr>`;
+    for (const u of r.data) {
+      html += `<tr class="clickable" onclick="selectUser('${u.id}')">
+        <td>${u.id}</td>
+        <td>${u.email || '-'}</td>
+        <td class="num">${fmtInt(u.trade_count)}</td>
+        <td><button class="sm" onclick="event.stopPropagation(); selectUser('${u.id}')">Use</button></td>
+      </tr>`;
+    }
+    html += '</table>';
+    document.getElementById('usersTable').innerHTML = html;
+  } catch {
+    document.getElementById('usersTable').innerHTML = '<p class="loading">Cannot load users</p>';
+  }
+}
+
+async function loadInstruments() {
+  try {
+    const r = await apiFetch('/v1/data/instruments');
+    if (!r.ok || r.data.length === 0) {
+      document.getElementById('instrumentsTable').innerHTML = '<p class="loading">No instruments found</p>';
+      return;
+    }
+    document.getElementById('instrumentCount').textContent = `${r.data.length} instruments`;
+    let html = `<table>
+      <tr><th>ID</th><th>Currency</th><th>Name</th><th></th></tr>`;
+    for (const i of r.data) {
+      html += `<tr class="clickable" onclick="selectInstrument('${i.id}')">
+        <td>${i.id}</td>
+        <td>${i.currency}</td>
+        <td>${i.name || '-'}</td>
+        <td><button class="sm" onclick="event.stopPropagation(); selectInstrument('${i.id}')">Use</button></td>
+      </tr>`;
+    }
+    html += '</table>';
+    document.getElementById('instrumentsTable').innerHTML = html;
+  } catch {
+    document.getElementById('instrumentsTable').innerHTML = '<p class="loading">Cannot load instruments</p>';
+  }
+}
+
+function selectUser(id) {
+  document.getElementById('userId').value = id;
+  switchTabTo('calc');
+}
+
+function selectInstrument(id) {
+  document.getElementById('volInstrument').value = id;
+  document.getElementById('phInstrument').value = id;
+}
+
+function switchTabTo(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', (name === 'calc' && i === 0) || (name === 'data' && i === 1));
+  });
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ── Price History ──────────────────────────────────────────────────────
+
+async function fetchPriceHistory() {
+  const inst = document.getElementById('phInstrument').value;
+  const from = document.getElementById('phFrom').value;
+  const to = document.getElementById('phTo').value;
+  const path = `/v1/data/instruments/${inst}/prices?from=${from}&to=${to}`;
+  setStatus('phStatus', `GET ${BASE_URL}${path}`);
+  try {
+    const r = await apiFetch(path);
+    if (!r.ok) {
+      setStatus('phStatus', `Error: ${r.data.message || r.statusText}`, 'error');
+      document.getElementById('phChart').innerHTML = `<p style="color:#f85149">${r.data.error}: ${r.data.message}</p>`;
+      return;
+    }
+    setStatus('phStatus', `OK`, 'ok');
+    document.getElementById('phCount').textContent = `${r.data.length} data points`;
+    renderPriceChart(r.data, inst);
+  } catch (e) {
+    setStatus('phStatus', `Network error: ${e.message}`, 'error');
+  }
+}
+
+function renderPriceChart(points, instrument) {
+  if (points.length === 0) {
+    document.getElementById('phChart').innerHTML = '<p class="loading">No price data</p>';
+    return;
+  }
+
+  // ASCII sparkline chart
+  const prices = points.map(p => p.price);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min || 1;
+  const chartHeight = 16;
+  const chartWidth = Math.min(points.length, 120);
+  const step = Math.max(1, Math.floor(points.length / chartWidth));
+
+  const sampled = [];
+  for (let i = 0; i < points.length; i += step) {
+    sampled.push(points[i]);
+  }
+
+  // Build chart rows
+  const rows = [];
+  for (let row = chartHeight - 1; row >= 0; row--) {
+    const threshold = min + (range * row / (chartHeight - 1));
+    let line = '';
+    for (const p of sampled) {
+      const normalized = (p.price - min) / range * (chartHeight - 1);
+      if (Math.round(normalized) >= row) {
+        line += '\u2588';
+      } else {
+        line += ' ';
+      }
+    }
+    const label = row === chartHeight - 1 ? fmt(max) :
+                  row === 0 ? fmt(min) :
+                  row === Math.floor(chartHeight / 2) ? fmt((min + max) / 2) : '';
+    rows.push(`${label.padStart(12)} \u2502${line}`);
+  }
+
+  const first = points[0];
+  const last = points[points.length - 1];
+  const change = last.price - first.price;
+  const changePct = change / first.price;
+  const cls = changeClass(change);
+
+  let html = `<pre style="font-size:11px; line-height:1.3;">`;
+  html += `${instrument}: ${fmt(last.price)}  `;
+  html += `<span class="${cls}">${sign(change)}${fmt(change)} (${sign(change)}${pct(changePct)})</span>\n\n`;
+  html += rows.join('\n');
+  html += `\n${''.padStart(13)}\u2514${''.padStart(sampled.length, '\u2500')}`;
+  html += `\n${''.padStart(13)}${first.date}${''.padEnd(Math.max(0, sampled.length - 20))}${last.date}`;
+  html += '</pre>';
+
+  // Also show a compact table with recent prices
+  html += '<details style="margin-top:12px"><summary style="cursor:pointer; color:#8b949e; font-size:12px">Show price table</summary>';
+  html += '<table style="margin-top:8px"><tr><th>Date</th><th style="text-align:right">Price</th><th style="text-align:right">Change</th></tr>';
+  const showPoints = points.slice(-30).reverse();
+  for (let i = 0; i < showPoints.length; i++) {
+    const p = showPoints[i];
+    const prev = showPoints[i + 1];
+    const ch = prev ? p.price - prev.price : 0;
+    const chCls = changeClass(ch);
+    html += `<tr><td>${p.date}</td><td class="num">${fmt(p.price)}</td><td class="num ${chCls}">${prev ? sign(ch) + fmt(ch) : '-'}</td></tr>`;
+  }
+  html += '</table></details>';
+
+  document.getElementById('phChart').innerHTML = html;
 }
 </script>
 </body>

@@ -11,7 +11,7 @@ use calce_core::domain::price::Price;
 use crate::error::DataResult;
 
 pub struct MarketDataRepo {
-    pub(crate) pool: PgPool,
+    pool: PgPool,
 }
 
 impl MarketDataRepo {
@@ -52,10 +52,7 @@ impl MarketDataRepo {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows
-            .into_iter()
-            .map(|(d, p)| (d, Price::new(p)))
-            .collect())
+        Ok(rows.into_iter().map(|(d, p)| (d, Price::new(p))).collect())
     }
 
     pub async fn get_fx_rate(
@@ -151,6 +148,53 @@ impl MarketDataRepo {
         Ok(result)
     }
 
+    pub async fn get_fx_rate_history(
+        &self,
+        from_ccy: Currency,
+        to_ccy: Currency,
+        date_from: NaiveDate,
+        date_to: NaiveDate,
+    ) -> DataResult<Vec<(NaiveDate, FxRate)>> {
+        let rows = sqlx::query_as::<_, (NaiveDate, f64)>(
+            "SELECT rate_date, rate FROM fx_rates \
+             WHERE from_currency = $1 AND to_currency = $2 \
+             AND rate_date >= $3 AND rate_date <= $4 \
+             ORDER BY rate_date",
+        )
+        .bind(from_ccy.as_str())
+        .bind(to_ccy.as_str())
+        .bind(date_from)
+        .bind(date_to)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(d, r)| (d, FxRate::new(from_ccy, to_ccy, r)))
+            .collect())
+    }
+
+    pub async fn list_instruments(&self) -> DataResult<Vec<(String, String, Option<String>)>> {
+        let rows = sqlx::query_as::<_, (String, String, Option<String>)>(
+            "SELECT id, currency, name FROM instruments ORDER BY id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn count_market_data(&self) -> DataResult<(i64, i64, i64)> {
+        let row = sqlx::query_as::<_, (i64, i64, i64)>(
+            "SELECT \
+             (SELECT COUNT(*) FROM instruments), \
+             (SELECT COUNT(*) FROM prices), \
+             (SELECT COUNT(*) FROM fx_rates)",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
     pub async fn insert_price(
         &self,
         instrument: &InstrumentId,
@@ -169,11 +213,7 @@ impl MarketDataRepo {
         Ok(())
     }
 
-    pub async fn insert_fx_rate(
-        &self,
-        rate: &FxRate,
-        date: NaiveDate,
-    ) -> DataResult<()> {
+    pub async fn insert_fx_rate(&self, rate: &FxRate, date: NaiveDate) -> DataResult<()> {
         sqlx::query(
             "INSERT INTO fx_rates (from_currency, to_currency, rate_date, rate) \
              VALUES ($1, $2, $3, $4) \
@@ -188,11 +228,7 @@ impl MarketDataRepo {
         Ok(())
     }
 
-    pub async fn insert_instrument(
-        &self,
-        id: &InstrumentId,
-        currency: Currency,
-    ) -> DataResult<()> {
+    pub async fn insert_instrument(&self, id: &InstrumentId, currency: Currency) -> DataResult<()> {
         sqlx::query(
             "INSERT INTO instruments (id, currency) VALUES ($1, $2) \
              ON CONFLICT (id) DO NOTHING",

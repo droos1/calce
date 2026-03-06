@@ -9,11 +9,6 @@ Cargo.toml                  — workspace root
 crates/
 ├── calce-core/             — core Rust library (no DB/async deps)
 │   ├── src/
-│   │   ├── accounting/     — exact-precision ledger arithmetic (Decimal)
-│   │   ├── calc/           — pure business logic, no side effects
-│   │   ├── reports/        — composed views bundling multiple calc primitives
-│   │   ├── services/       — service traits + in-memory test impls
-│   │   └── domain/         — data types only, no business logic
 │   └── tests/
 ├── calce-data/             — real DB implementations of service traits
 │   └── src/
@@ -24,23 +19,38 @@ crates/
     └── tests/              — pytest tests
 ```
 
-`calce-core` defines service traits; `calce-data` implements them against real databases.
+`calce-core` defines service traits; 
+`calce-data` implements them against real databases.
 `calce-core` has no DB or async dependencies — this keeps it fast to compile and easy to test.
-See `docs/rust-guidelines.md` for the full architecture rationale.
 
-Domain types are data carriers. Business logic belongs in `calc/`.
-Intrinsic operations (e.g. `Money::convert`, `FxRate::invert`) are fine on domain types.
+## Documentation
 
-## Numeric Types
+| Path | Purpose | When to update |
+|------|---------|----------------|
+| `docs/architecture.md` | Overall architecture, design principles, layer boundaries | Major structural changes |
+| `docs/rust-guidelines.md` | Rust conventions and architecture rationale | When conventions change |
+| `docs/calculations/methodology.md` | Calculation formulas and assumptions (`#CALC_*` tags) | Adding/changing a calculation |
+| `docs/auth.md` | Authentication and authorization design | Auth changes |
 
-| Type | Use for | Module |
-|------|---------|--------|
-| `f64` | Market valuations, risk metrics, FX conversions, portfolio analytics | `domain/`, `calc/` |
-| `rust_decimal::Decimal` | Ledger balancing, fee splits, any arithmetic that must be exact | `accounting/` |
+These are **permanent documentation** — keep them accurate but concise.
 
-Domain types (`Quantity`, `Price`, `Money`, `FxRate`) use `f64`. They derive `PartialEq` but **not** `Eq` (f64 is not `Eq`).
+### Working Notes (`docs/working-notes/`)
 
-The `accounting` module uses `Decimal` for exact ledger arithmetic where debits and credits must balance to zero.
+Ephemeral tracking: implementation status, planned features, known issues, task progress. Not permanent docs — expected to go stale and get cleaned up. Use this for longer-running tasks and design exploration.
+
+### Calculation Reference (`docs/calculations/methodology.md`)
+
+Documentation of calculation methodology, assumptions, and formulas.
+
+Each calculation has a tag (e.g. `#CALC_MV`) that appears in both the
+methodology doc and the implementing function's doc comment. To trace from
+spec to code or vice versa: `grep -r CALC_MV`.
+
+When adding a new calculation you **must**:
+1. Add a section in `docs/calculations/methodology.md` with a new `#CALC_*` tag
+2. Add the same tag to the implementing function's doc comment
+
+When making significant changes in calculations check that documentation is up to date.
 
 ## Comments
 
@@ -61,28 +71,6 @@ Only comment when the comment adds value that the code doesn't already convey.
 
 **Rule of thumb:** if the doc comment is just the function/field/type name rephrased as a sentence, delete it.
 
-## Calculation Reference (`docs/calculations/`)
-
-Documentation of calculation methodology, assumptions, and formulas.
-
-Each calculation has a tag (e.g. `#CALC_MV`) that appears in both the
-methodology doc and the implementing function's doc comment. To trace from
-spec to code or vice versa: `grep -r CALC_MV`.
-
-Examples:
-| Tag                | Calculation            | Source                                    |
-|--------------------|------------------------|-------------------------------------------|
-| `#CALC_POS_AGG`    | Position aggregation   | `crates/calce-core/src/calc/aggregation.rs`     |
-| `#CALC_MV`         | Market value           | `crates/calce-core/src/calc/market_value.rs`    |
-| `#CALC_VCHG`       | Value change           | `crates/calce-core/src/calc/value_change.rs`    |
-
-When adding a new calculation you **must**:
-1. Add a section in `docs/calculations/methodology.md` with a new `#CALC_*` tag
-2. Add the same tag to the implementing function's doc comment
-3. Update this table
-
-When making significant changes in calculations check that documentation is up to date.
-
 ## Development
 
 ```sh
@@ -90,6 +78,11 @@ cargo build
 cargo test
 cargo clippy --workspace -- -D warnings
 ```
+
+**`invoke check`** runs formatting, clippy, and tests in one go. You must:
+- Run it regularly during development
+- Ensure it passes before considering any feature complete
+- **Always** run it before any commit — never commit with failing checks
 
 ### Python bindings
 

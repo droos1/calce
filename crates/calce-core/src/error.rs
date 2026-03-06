@@ -37,6 +37,17 @@ pub enum CalceError {
     #[error("Currency mismatch: {0}")]
     CurrencyMismatch(#[from] CurrencyMismatch),
 
-    #[error("Data error: {0}")]
-    DataError(String),
+    #[error("Currency conflict for {instrument}: expected {expected}, got {actual}")]
+    CurrencyConflict {
+        instrument: InstrumentId,
+        expected: Currency,
+        actual: Currency,
+    },
+
+    #[error("Data error: {message}")]
+    DataError {
+        message: String,
+        /// The underlying error source (e.g. database error), preserved for logging.
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
 }

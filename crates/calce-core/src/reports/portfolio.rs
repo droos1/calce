@@ -1,9 +1,10 @@
 use crate::calc::aggregation::aggregate_positions;
-use crate::calc::market_value::{value_positions, MarketValueResult};
-use crate::calc::value_change::{value_change_summary_from, ValueChangeSummary};
+use crate::calc::market_value::{MarketValueResult, value_positions};
+use crate::calc::value_change::{ValueChangeSummary, value_change_summary_from};
 use crate::context::CalculationContext;
 use crate::domain::trade::Trade;
 use crate::error::CalceResult;
+use crate::outcome::Outcome;
 use crate::services::market_data::MarketDataService;
 
 /// `#CALC_REPORT`
@@ -22,6 +23,9 @@ pub struct PortfolioReport {
 
 /// `#CALC_REPORT` — pure composite: aggregate, value, diff in one call.
 ///
+/// Warnings from market value and value change computations are merged
+/// into a single `Outcome`.
+///
 /// # Errors
 ///
 /// Propagates errors from position aggregation, market value, or value change.
@@ -29,15 +33,21 @@ pub fn portfolio_report(
     trades: &[Trade],
     ctx: &CalculationContext,
     market_data: &dyn MarketDataService,
-) -> CalceResult<PortfolioReport> {
-    let positions = aggregate_positions(trades, ctx.as_of_date);
-    let market_value = value_positions(&positions, ctx, market_data)?;
-    let value_changes = value_change_summary_from(&market_value, trades, ctx, market_data)?;
+) -> CalceResult<Outcome<PortfolioReport>> {
+    let positions = aggregate_positions(trades, ctx.as_of_date)?;
+    let mv_outcome = value_positions(&positions, ctx, market_data)?;
+    let vc_outcome = value_change_summary_from(&mv_outcome.value, trades, ctx, market_data)?;
 
-    Ok(PortfolioReport {
-        market_value,
-        value_changes,
-    })
+    let mut warnings = mv_outcome.warnings;
+    warnings.extend(vc_outcome.warnings);
+
+    Ok(Outcome::with_warnings(
+        PortfolioReport {
+            market_value: mv_outcome.value,
+            value_changes: vc_outcome.value,
+        },
+        warnings,
+    ))
 }
 
 #[cfg(test)]
@@ -88,9 +98,13 @@ mod tests {
         for date in [today, day_ago, week_ago, year_ago, prev_year_end] {
             market_data.add_fx_rate(FxRate::new(usd, sek, 10.0), date);
         }
+        market_data.freeze();
 
         let ctx = CalculationContext::new(sek, today);
-        let report = portfolio_report(&trades, &ctx, &market_data).unwrap();
+        let outcome = portfolio_report(&trades, &ctx, &market_data).unwrap();
+        let report = &outcome.value;
+
+        assert!(!outcome.has_warnings());
 
         // Market value: 100 * 200 * 10 = 200,000 SEK
         assert_eq!(report.market_value.total.amount, 200_000.0);

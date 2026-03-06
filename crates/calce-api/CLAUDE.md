@@ -32,7 +32,7 @@ GET /v1/instruments/{instrument_id}/volatility?as_of_date=...&lookback_days=...
 ```
 
 When adding a new endpoint, decide which scope it belongs to:
-- If it needs user trades/positions → user-scoped, auth + access check, use CalcEngine
+- If it needs user trades/positions → user-scoped, pass SecurityContext to DataLoader, call calc functions
 - If it only needs market data → instrument-scoped, auth only, call calc function directly
 
 ## Authentication
@@ -58,8 +58,7 @@ All `CalceError` variants must be mapped in `error.rs`. Current mapping:
 
 **Important:** 500 should only occur for genuine server bugs (panics, DB connection
 failures), never for missing data or bad input. If a `CalceError` maps to 500,
-that's a sign the mapping needs fixing. PriceNotFound and FxRateNotFound are
-currently 500 but should be 422 — this is a known issue.
+that's a sign the mapping needs fixing.
 
 Response format:
 ```json

@@ -1,13 +1,14 @@
 use chrono::{Datelike, NaiveDate};
 
 use crate::context::CalculationContext;
+use crate::domain::instrument::InstrumentId;
 use crate::domain::money::Money;
 use crate::domain::trade::Trade;
-use crate::error::CalceResult;
+use crate::error::{CalceError, CalceResult};
 use crate::services::market_data::MarketDataService;
 
 use super::aggregation::aggregate_positions;
-use super::market_value::{value_positions, MarketValueResult};
+use super::market_value::{MarketValueResult, value_positions};
 
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -43,7 +44,7 @@ pub fn value_change(
     current: &MarketValueResult,
     previous: &MarketValueResult,
 ) -> CalceResult<ValueChange> {
-    let change = current.total.checked_add(Money::new(-previous.total.amount, previous.total.currency))?;
+    let change = current.total.checked_sub(previous.total)?;
     let change_pct = if previous.total.amount == 0.0 {
         None
     } else {
@@ -60,7 +61,8 @@ pub fn value_change(
 /// `#CALC_VCHG` — summary across standard periods.
 ///
 /// Calls `aggregate_positions` and `value_positions` at each comparison date,
-/// then computes the change for each period.
+/// then computes the change for each period. Warnings from all snapshots are
+/// collected into the returned `Outcome`.
 ///
 /// # Errors
 ///
@@ -69,9 +71,11 @@ pub fn value_change_summary(
     trades: &[Trade],
     ctx: &CalculationContext,
     market_data: &dyn MarketDataService,
-) -> CalceResult<ValueChangeSummary> {
-    let current = market_value_at(trades, ctx.as_of_date, ctx, market_data)?;
-    value_change_summary_from(&current, trades, ctx, market_data)
+) -> CalceResult<Outcome<ValueChangeSummary>> {
+    let current_outcome = market_value_at(trades, ctx.as_of_date, ctx, market_data)?;
+    let mut result = value_change_summary_from(&current_outcome.value, trades, ctx, market_data)?;
+    result.merge_warnings(&current_outcome);
+    Ok(result)
 }
 
 /// `#CALC_VCHG` — summary using a pre-computed current-date market value.
@@ -88,44 +92,74 @@ pub fn value_change_summary_from(
     trades: &[Trade],
     ctx: &CalculationContext,
     market_data: &dyn MarketDataService,
-) -> CalceResult<ValueChangeSummary> {
+) -> CalceResult<Outcome<ValueChangeSummary>> {
     let day_ago = ctx.as_of_date - chrono::Days::new(1);
     let week_ago = ctx.as_of_date - chrono::Days::new(7);
-    let year_ago = prev_year(ctx.as_of_date);
-    // Dec 31 of previous year
-    let ytd_start = NaiveDate::from_ymd_opt(ctx.as_of_date.year() - 1, 12, 31)
-        .unwrap_or(ctx.as_of_date);
+    let year_ago = prev_year(ctx.as_of_date)?;
+    // Dec 31 of previous year — always valid since month=12, day=31
+    let ytd_start =
+        NaiveDate::from_ymd_opt(ctx.as_of_date.year() - 1, 12, 31).ok_or_else(|| {
+            CalceError::InsufficientData {
+                instrument: InstrumentId::new("portfolio"),
+                reason: format!("cannot compute YTD start for {}", ctx.as_of_date),
+            }
+        })?;
 
-    let daily = value_change(current, &market_value_at(trades, day_ago, ctx, market_data)?)?;
-    let weekly = value_change(current, &market_value_at(trades, week_ago, ctx, market_data)?)?;
-    let yearly = value_change(current, &market_value_at(trades, year_ago, ctx, market_data)?)?;
-    let ytd = value_change(current, &market_value_at(trades, ytd_start, ctx, market_data)?)?;
+    let mut warnings: Vec<Warning> = Vec::new();
 
-    Ok(ValueChangeSummary {
-        market_value: current.total,
-        daily,
-        weekly,
-        yearly,
-        ytd,
-    })
+    let daily_mv = market_value_at(trades, day_ago, ctx, market_data)?;
+    warnings.extend(daily_mv.warnings);
+    let daily = value_change(current, &daily_mv.value)?;
+
+    let weekly_mv = market_value_at(trades, week_ago, ctx, market_data)?;
+    warnings.extend(weekly_mv.warnings);
+    let weekly = value_change(current, &weekly_mv.value)?;
+
+    let yearly_mv = market_value_at(trades, year_ago, ctx, market_data)?;
+    warnings.extend(yearly_mv.warnings);
+    let yearly = value_change(current, &yearly_mv.value)?;
+
+    let ytd_mv = market_value_at(trades, ytd_start, ctx, market_data)?;
+    warnings.extend(ytd_mv.warnings);
+    let ytd = value_change(current, &ytd_mv.value)?;
+
+    Ok(Outcome::with_warnings(
+        ValueChangeSummary {
+            market_value: current.total,
+            daily,
+            weekly,
+            yearly,
+            ytd,
+        },
+        warnings,
+    ))
 }
+
+use crate::outcome::{Outcome, Warning};
 
 fn market_value_at(
     trades: &[Trade],
     date: NaiveDate,
     ctx: &CalculationContext,
     market_data: &dyn MarketDataService,
-) -> CalceResult<MarketValueResult> {
-    let positions = aggregate_positions(trades, date);
+) -> CalceResult<Outcome<MarketValueResult>> {
+    let positions = aggregate_positions(trades, date)?;
     let point_ctx = CalculationContext::new(ctx.base_currency, date);
     value_positions(&positions, &point_ctx, market_data)
 }
 
 /// Same date one year earlier, handling leap years (Feb 29 → Feb 28).
-fn prev_year(date: NaiveDate) -> NaiveDate {
+///
+/// # Errors
+///
+/// Returns `InsufficientData` if the date cannot be represented.
+fn prev_year(date: NaiveDate) -> CalceResult<NaiveDate> {
     NaiveDate::from_ymd_opt(date.year() - 1, date.month(), date.day())
         .or_else(|| NaiveDate::from_ymd_opt(date.year() - 1, date.month(), date.day() - 1))
-        .unwrap_or(date)
+        .ok_or_else(|| CalceError::InsufficientData {
+            instrument: InstrumentId::new("portfolio"),
+            reason: format!("cannot compute year-ago date for {date}"),
+        })
 }
 
 #[cfg(test)]
@@ -211,9 +245,11 @@ mod tests {
         for date in [today, day_ago, week_ago, year_ago, prev_year_end] {
             market_data.add_fx_rate(FxRate::new(usd, sek, 10.0), date);
         }
+        market_data.freeze();
 
         let ctx = CalculationContext::new(sek, today);
-        let summary = value_change_summary(&trades, &ctx, &market_data).unwrap();
+        let outcome = value_change_summary(&trades, &ctx, &market_data).unwrap();
+        let summary = &outcome.value;
 
         // Current: 100 * 200 * 10 = 200,000 SEK
         assert_eq!(summary.market_value.amount, 200_000.0);
@@ -235,7 +271,7 @@ mod tests {
     fn prev_year_handles_leap_year() {
         // 2024-02-29 → 2023-02-28
         let leap = NaiveDate::from_ymd_opt(2024, 2, 29).unwrap();
-        let result = prev_year(leap);
+        let result = prev_year(leap).unwrap();
         assert_eq!(result, NaiveDate::from_ymd_opt(2023, 2, 28).unwrap());
     }
 }

@@ -1,4 +1,5 @@
 use crate::domain::user::UserId;
+use crate::permissions;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Role {
@@ -26,8 +27,9 @@ impl SecurityContext {
         }
     }
 
+    /// Delegates to [`permissions::can_access_user_data`].
     #[must_use]
     pub fn can_access(&self, target: &UserId) -> bool {
-        self.role == Role::Admin || self.user_id == *target
+        permissions::can_access_user_data(self, target)
     }
 }

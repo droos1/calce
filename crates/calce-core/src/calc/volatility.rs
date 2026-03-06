@@ -152,6 +152,7 @@ mod tests {
         // 152 days of the same price
         let prices: Vec<f64> = vec![100.0; 152];
         add_prices(&mut md, &inst, start, &prices);
+        md.freeze();
 
         let result = calculate_volatility(&inst, as_of, 365, &md).unwrap();
 
@@ -175,6 +176,7 @@ mod tests {
             prices.push(if i % 2 == 0 { 100.0 } else { 101.0 });
         }
         add_prices(&mut md, &inst, start, &prices);
+        md.freeze();
 
         let result = calculate_volatility(&inst, as_of, 365, &md).unwrap();
 
@@ -192,6 +194,7 @@ mod tests {
         let mut md = InMemoryMarketDataService::new();
         md.add_price(&inst, date(2025, 1, 1), Price::new(100.0));
         md.add_price(&inst, date(2025, 3, 15), Price::new(105.0));
+        md.freeze();
 
         let result = calculate_volatility(&inst, date(2025, 6, 1), 365, &md);
 
@@ -212,6 +215,7 @@ mod tests {
 
         let prices: Vec<f64> = (0..23).map(|i| 100.0 + f64::from(i)).collect();
         add_prices(&mut md, &inst, start, &prices);
+        md.freeze();
 
         let result = calculate_volatility(&inst, as_of, 365, &md);
 
@@ -234,6 +238,7 @@ mod tests {
         let mut prices = vec![100.0; 20];
         prices.extend(vec![0.0; 132]);
         add_prices(&mut md, &inst, start, &prices);
+        md.freeze();
 
         let result = calculate_volatility(&inst, as_of, 365, &md);
 
@@ -260,6 +265,7 @@ mod tests {
             prices[i] = 0.0;
         }
         add_prices(&mut md, &inst, start, &prices);
+        md.freeze();
 
         let result = calculate_volatility(&inst, as_of, 365, &md).unwrap();
 
@@ -271,7 +277,8 @@ mod tests {
     #[test]
     fn no_prices_in_range_fails() {
         let inst = InstrumentId::new("EMPTY");
-        let md = InMemoryMarketDataService::new();
+        let mut md = InMemoryMarketDataService::new();
+        md.freeze();
 
         let result = calculate_volatility(&inst, date(2025, 6, 1), 365, &md);
         assert!(result.is_err());

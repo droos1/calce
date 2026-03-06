@@ -18,7 +18,14 @@ impl From<DataError> for CalceError {
     fn from(err: DataError) -> Self {
         match err {
             DataError::Core(e) => e,
-            other => CalceError::DataError(other.to_string()),
+            DataError::Sqlx(e) => CalceError::DataError {
+                message: e.to_string(),
+                source: Some(Box::new(e)),
+            },
+            DataError::Migration(e) => CalceError::DataError {
+                message: e.to_string(),
+                source: Some(Box::new(e)),
+            },
         }
     }
 }

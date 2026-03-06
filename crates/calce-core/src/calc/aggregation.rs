@@ -2,24 +2,48 @@ use std::collections::HashMap;
 
 use chrono::NaiveDate;
 
+use crate::domain::currency::Currency;
 use crate::domain::instrument::InstrumentId;
 use crate::domain::position::Position;
 use crate::domain::quantity::Quantity;
 use crate::domain::trade::Trade;
+use crate::error::{CalceError, CalceResult};
 
 /// `#CALC_POS_AGG`
 ///
 /// Trades after `as_of_date` are excluded. Fully closed positions (zero net quantity) are omitted.
-#[must_use]
-pub fn aggregate_positions(trades: &[Trade], as_of_date: NaiveDate) -> Vec<Position> {
-    let mut net: HashMap<InstrumentId, (Quantity, crate::domain::currency::Currency)> =
-        HashMap::new();
+///
+/// # Errors
+///
+/// Returns `CurrencyConflict` if the same instrument appears with different currencies.
+pub fn aggregate_positions(trades: &[Trade], as_of_date: NaiveDate) -> CalceResult<Vec<Position>> {
+    let mut net: HashMap<InstrumentId, (Quantity, Currency)> = HashMap::new();
 
     for trade in trades {
         if trade.date <= as_of_date {
             net.entry(trade.instrument_id.clone())
-                .and_modify(|(qty, _)| *qty = *qty + trade.quantity)
+                .and_modify(|(qty, existing_ccy)| {
+                    // Currency conflict is checked below after collection
+                    if *existing_ccy == trade.currency {
+                        *qty = *qty + trade.quantity;
+                    }
+                })
                 .or_insert((trade.quantity, trade.currency));
+        }
+    }
+
+    // Check for currency conflicts: re-scan trades to detect any instrument
+    // that appeared with more than one currency.
+    for trade in trades {
+        if trade.date <= as_of_date
+            && let Some(&(_, existing_ccy)) = net.get(&trade.instrument_id)
+            && existing_ccy != trade.currency
+        {
+            return Err(CalceError::CurrencyConflict {
+                instrument: trade.instrument_id.clone(),
+                expected: existing_ccy,
+                actual: trade.currency,
+            });
         }
     }
 
@@ -35,7 +59,7 @@ pub fn aggregate_positions(trades: &[Trade], as_of_date: NaiveDate) -> Vec<Posit
 
     // Sort for deterministic output
     positions.sort_by(|a, b| a.instrument_id.as_str().cmp(b.instrument_id.as_str()));
-    positions
+    Ok(positions)
 }
 
 #[cfg(test)]
@@ -75,7 +99,7 @@ mod tests {
             },
         ];
 
-        let positions = aggregate_positions(&trades, date);
+        let positions = aggregate_positions(&trades, date).unwrap();
         assert_eq!(positions.len(), 1);
         assert_eq!(positions[0].quantity.value(), 70.0);
     }
@@ -109,7 +133,7 @@ mod tests {
             },
         ];
 
-        let positions = aggregate_positions(&trades, date);
+        let positions = aggregate_positions(&trades, date).unwrap();
         assert!(positions.is_empty());
     }
 
@@ -143,8 +167,46 @@ mod tests {
             },
         ];
 
-        let positions = aggregate_positions(&trades, early);
+        let positions = aggregate_positions(&trades, early).unwrap();
         assert_eq!(positions.len(), 1);
         assert_eq!(positions[0].quantity.value(), 50.0);
+    }
+
+    #[test]
+    fn mixed_currencies_for_same_instrument_rejected() {
+        let date = NaiveDate::from_ymd_opt(2025, 1, 15).expect("valid test date");
+        let usd = Currency::new("USD");
+        let eur = Currency::new("EUR");
+        let aapl = InstrumentId::new("AAPL");
+        let alice = UserId::new("alice");
+        let acct_usd = AccountId::new("alice-usd");
+        let acct_eur = AccountId::new("alice-eur");
+
+        let trades = vec![
+            Trade {
+                user_id: alice.clone(),
+                account_id: acct_usd,
+                instrument_id: aapl.clone(),
+                quantity: Quantity::new(100.0),
+                price: Price::new(145.0),
+                currency: usd,
+                date,
+            },
+            Trade {
+                user_id: alice,
+                account_id: acct_eur,
+                instrument_id: aapl,
+                quantity: Quantity::new(50.0),
+                price: Price::new(145.0),
+                currency: eur,
+                date,
+            },
+        ];
+
+        let result = aggregate_positions(&trades, date);
+        assert!(matches!(
+            result.unwrap_err(),
+            CalceError::CurrencyConflict { .. }
+        ));
     }
 }

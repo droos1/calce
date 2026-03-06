@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::routing::get;
-use calce_data::engine::AsyncCalcEngine;
+use calce_data::loader::DataLoader;
 use calce_data::repo::market_data::MarketDataRepo;
 use calce_data::repo::user_data::UserDataRepo;
 use sqlx::PgPool;
@@ -22,6 +22,7 @@ use state::AppState;
 
 fn build_router(state: AppState) -> Router {
     Router::new()
+        .route("/", get(routes::explorer))
         .route(
             "/v1/users/{user_id}/market-value",
             get(routes::market_value),
@@ -34,17 +35,19 @@ fn build_router(state: AppState) -> Router {
             "/v1/instruments/{instrument_id}/volatility",
             get(routes::volatility),
         )
+        .route("/v1/data/stats", get(routes::data_stats))
+        .route("/v1/data/users", get(routes::data_users))
+        .route("/v1/data/instruments", get(routes::data_instruments))
+        .route(
+            "/v1/data/instruments/{instrument_id}/prices",
+            get(routes::instrument_prices),
+        )
         .layer(CorsLayer::very_permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
 
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
-
+async fn create_postgres_loader() -> DataLoader {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://calce:calce@localhost:5433/calce".into());
 
@@ -57,22 +60,137 @@ async fn main() {
         .await
         .expect("failed to run migrations");
 
-    tracing::info!("Database connected and migrations applied");
+    tracing::info!("Backend: postgres ({database_url})");
+    DataLoader::new(MarketDataRepo::new(pool.clone()), UserDataRepo::new(pool))
+}
 
-    let engine = AsyncCalcEngine::new(
-        MarketDataRepo::new(pool.clone()),
-        UserDataRepo::new(pool),
+#[cfg(feature = "njorda")]
+fn create_njorda_cache_loader() -> DataLoader {
+    use std::time::Instant;
+
+    use calce_core::services::user_data::InMemoryUserDataService;
+    use calce_data::njorda::{self, cache};
+
+    let cache_path = cache::cache_path();
+    let service_path = cache::service_cache_path();
+
+    // Try loading pre-built service cache
+    if cache::service_is_fresh(&service_path, &cache_path) {
+        tracing::info!("Loading pre-built service from {}", service_path.display());
+        let t0 = Instant::now();
+        match cache::load_service(&service_path) {
+            Ok(market_data) => {
+                let mem_mb = market_data.approx_heap_bytes() / (1024 * 1024);
+                tracing::info!(
+                    "Service loaded in {:.2}s ({} instruments, {} prices, {} FX rates, ~{} MB)",
+                    t0.elapsed().as_secs_f64(),
+                    market_data.instrument_ids().len(),
+                    market_data.price_count(),
+                    market_data.fx_rate_count(),
+                    mem_mb,
+                );
+                return DataLoader::in_memory(market_data, InMemoryUserDataService::new());
+            }
+            Err(e) => {
+                tracing::warn!("Service cache invalid, rebuilding: {e}");
+            }
+        }
+    }
+
+    // Load raw cache and build
+    tracing::info!("Loading njorda cache from {}", cache_path.display());
+    let t0 = Instant::now();
+    let cached = cache::load_from_file(&cache_path).unwrap_or_else(|e| {
+        eprintln!(
+            "Failed to load njorda cache at {}: {e}",
+            cache_path.display()
+        );
+        eprintln!("Run 'invoke njorda-fetch' first to create the cache.");
+        std::process::exit(1);
+    });
+    tracing::info!(
+        "Cache loaded in {:.2}s: {} instruments, {} prices, {} FX rates — building index...",
+        t0.elapsed().as_secs_f64(),
+        cached.metadata.instrument_count,
+        cached.metadata.price_count,
+        cached.metadata.fx_rate_count,
     );
+
+    let t0 = Instant::now();
+    let market_data = njorda::build_service(&cached).unwrap_or_else(|e| {
+        eprintln!("Failed to build market data from cache: {e}");
+        std::process::exit(1);
+    });
+    let mem_mb = market_data.approx_heap_bytes() / (1024 * 1024);
+    tracing::info!(
+        "Index built in {:.2}s ({} instruments, {} prices, {} FX rates, ~{} MB)",
+        t0.elapsed().as_secs_f64(),
+        market_data.instrument_ids().len(),
+        market_data.price_count(),
+        market_data.fx_rate_count(),
+        mem_mb,
+    );
+
+    // Save for next startup
+    let t0 = Instant::now();
+    match cache::save_service(&service_path, &market_data) {
+        Ok(()) => tracing::info!(
+            "Service saved to {} in {:.2}s",
+            service_path.display(),
+            t0.elapsed().as_secs_f64()
+        ),
+        Err(e) => tracing::warn!("Failed to save service cache: {e}"),
+    }
+
+    tracing::info!(
+        "Date range: {} to {} (fetched {})",
+        cached.metadata.date_from,
+        cached.metadata.date_to,
+        cached.metadata.fetched_at.format("%Y-%m-%d %H:%M UTC"),
+    );
+
+    DataLoader::in_memory(market_data, InMemoryUserDataService::new())
+}
+
+#[cfg(not(feature = "njorda"))]
+fn create_njorda_cache_loader() -> DataLoader {
+    eprintln!("Error: njorda-cache backend requires the 'njorda' feature.");
+    eprintln!("Build with: cargo run -p calce-api --features njorda");
+    eprintln!("Or use: invoke run-api --njorda");
+    std::process::exit(1);
+}
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
+    let backend = std::env::var("CALCE_BACKEND").unwrap_or_else(|_| "postgres".into());
+
+    let loader = match backend.as_str() {
+        "postgres" => create_postgres_loader().await,
+        "njorda-cache" => create_njorda_cache_loader(),
+        other => {
+            eprintln!("Unknown CALCE_BACKEND: {other}");
+            eprintln!("Options: postgres (default), njorda-cache");
+            std::process::exit(1);
+        }
+    };
+
     let state = AppState {
-        engine: Arc::new(engine),
+        loader: Arc::new(loader),
     };
 
     let app = build_router(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
+    let port = std::env::var("PORT").unwrap_or_else(|_| "35701".into());
+    let addr = format!("0.0.0.0:{port}");
+    let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("failed to bind");
 
+    tracing::info!("Dev console: http://localhost:{port}");
     tracing::info!("Listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, app).await.expect("server error");
 }
@@ -86,12 +204,9 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_state() -> AppState {
-        let engine = AsyncCalcEngine::from_in_memory(
-            seed::seed_market_data(),
-            seed::seed_user_data(),
-        );
+        let loader = DataLoader::in_memory(seed::seed_market_data(), seed::seed_user_data());
         AppState {
-            engine: Arc::new(engine),
+            loader: Arc::new(loader),
         }
     }
 
@@ -101,10 +216,7 @@ mod tests {
         for &(k, v) in headers {
             req = req.header(k, v);
         }
-        let response = app
-            .oneshot(req.body(Body::empty()).unwrap())
-            .await
-            .unwrap();
+        let response = app.oneshot(req.body(Body::empty()).unwrap()).await.unwrap();
         let status = response.status();
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -120,7 +232,8 @@ mod tests {
         let (status, body) = get(
             "/v1/users/alice/market-value?as_of_date=2025-03-14&base_currency=SEK",
             &auth_headers(),
-        ).await;
+        )
+        .await;
 
         assert_eq!(status, StatusCode::OK);
         assert!(body["total"]["amount"].is_number());
@@ -132,7 +245,8 @@ mod tests {
         let (status, _) = get(
             "/v1/users/alice/market-value?as_of_date=2025-03-14&base_currency=SEK",
             &[],
-        ).await;
+        )
+        .await;
 
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
@@ -142,7 +256,8 @@ mod tests {
         let (status, body) = get(
             "/v1/users/alice/market-value?as_of_date=2025-03-14&base_currency=NOPE",
             &auth_headers(),
-        ).await;
+        )
+        .await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["error"], "BAD_REQUEST");
@@ -153,7 +268,8 @@ mod tests {
         let (status, body) = get(
             "/v1/users/alice/portfolio?as_of_date=2025-03-14&base_currency=SEK",
             &auth_headers(),
-        ).await;
+        )
+        .await;
 
         assert_eq!(status, StatusCode::OK);
         assert!(body["market_value"]["total"]["amount"].is_number());
@@ -165,7 +281,8 @@ mod tests {
         let (status, body) = get(
             "/v1/instruments/AAPL/volatility?as_of_date=2025-03-14&lookback_days=365",
             &auth_headers(),
-        ).await;
+        )
+        .await;
 
         assert_eq!(status, StatusCode::OK);
         assert!(body["annualized_volatility"].is_number());
@@ -180,7 +297,8 @@ mod tests {
         let (status, body) = get(
             "/v1/instruments/AAPL/volatility?as_of_date=2025-03-14",
             &auth_headers(),
-        ).await;
+        )
+        .await;
 
         assert_eq!(status, StatusCode::OK);
         assert!(body["annualized_volatility"].is_number());
@@ -191,10 +309,10 @@ mod tests {
         let (status, _) = get(
             "/v1/instruments/DOESNOTEXIST/volatility?as_of_date=2025-03-14",
             &auth_headers(),
-        ).await;
+        )
+        .await;
 
-        // PriceNotFound → 500
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     #[tokio::test]
@@ -202,7 +320,8 @@ mod tests {
         let (status, _) = get(
             "/v1/instruments/AAPL/volatility?as_of_date=2025-03-14&lookback_days=365",
             &[],
-        ).await;
+        )
+        .await;
 
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }

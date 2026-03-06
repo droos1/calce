@@ -6,6 +6,7 @@ use crate::domain::position::Position;
 use crate::domain::price::Price;
 use crate::domain::quantity::Quantity;
 use crate::error::CalceResult;
+use crate::outcome::{Outcome, Warning};
 use crate::services::market_data::MarketDataService;
 
 #[derive(Clone, Debug)]
@@ -28,27 +29,44 @@ pub struct MarketValueResult {
 
 /// `#CALC_MV`
 ///
+/// Values each position at current market prices. Positions where the price
+/// or FX rate is missing are skipped and reported as warnings rather than
+/// failing the entire calculation.
+///
 /// # Errors
 ///
-/// Returns `PriceNotFound` if a position's instrument has no price.
-/// Returns `FxRateNotFound` if a cross-currency position has no FX rate.
-/// Returns `CurrencyMismatch` if an FX rate's direction doesn't match.
+/// Returns `CurrencyMismatch` if an FX rate's direction doesn't match (a bug,
+/// not missing data). All missing-data situations produce warnings instead.
 pub fn value_positions(
     positions: &[Position],
     ctx: &CalculationContext,
     market_data: &dyn MarketDataService,
-) -> CalceResult<MarketValueResult> {
+) -> CalceResult<Outcome<MarketValueResult>> {
     let mut valued = Vec::with_capacity(positions.len());
+    let mut warnings = Vec::new();
 
     for pos in positions {
-        let price = market_data.get_price(&pos.instrument_id, ctx.as_of_date)?;
+        let price = match market_data.get_price(&pos.instrument_id, ctx.as_of_date) {
+            Ok(p) => p,
+            Err(e) => {
+                warnings.push(Warning::missing_price(e.to_string()));
+                continue;
+            }
+        };
+
         let market_value = Money::new(pos.quantity.value() * price.value(), pos.currency);
 
         let market_value_base = if pos.currency == ctx.base_currency {
             market_value
         } else {
             let rate =
-                market_data.get_fx_rate(pos.currency, ctx.base_currency, ctx.as_of_date)?;
+                match market_data.get_fx_rate(pos.currency, ctx.base_currency, ctx.as_of_date) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        warnings.push(Warning::missing_fx_rate(e.to_string()));
+                        continue;
+                    }
+                };
             market_value.convert(&rate)?
         };
 
@@ -71,10 +89,13 @@ pub fn value_positions(
             acc.checked_add(p.market_value_base)
         })?;
 
-    Ok(MarketValueResult {
-        positions: valued,
-        total,
-    })
+    Ok(Outcome::with_warnings(
+        MarketValueResult {
+            positions: valued,
+            total,
+        },
+        warnings,
+    ))
 }
 
 #[cfg(test)]
@@ -97,6 +118,7 @@ mod tests {
 
         let mut market_data = InMemoryMarketDataService::new();
         market_data.add_price(&aapl, date(), Price::new(150.0));
+        market_data.freeze();
 
         let positions = vec![Position {
             instrument_id: aapl,
@@ -105,9 +127,10 @@ mod tests {
         }];
         let ctx = CalculationContext::new(usd, date());
 
-        let result = value_positions(&positions, &ctx, &market_data).expect("should succeed");
-        assert_eq!(result.total.amount, 15000.0);
-        assert_eq!(result.total.currency, usd);
+        let outcome = value_positions(&positions, &ctx, &market_data).expect("should succeed");
+        assert!(!outcome.has_warnings());
+        assert_eq!(outcome.value.total.amount, 15000.0);
+        assert_eq!(outcome.value.total.currency, usd);
     }
 
     #[test]
@@ -119,6 +142,7 @@ mod tests {
         let mut market_data = InMemoryMarketDataService::new();
         market_data.add_price(&aapl, date(), Price::new(150.0));
         market_data.add_fx_rate(FxRate::new(usd, sek, 10.0), date());
+        market_data.freeze();
 
         let positions = vec![Position {
             instrument_id: aapl,
@@ -127,17 +151,18 @@ mod tests {
         }];
         let ctx = CalculationContext::new(sek, date());
 
-        let result = value_positions(&positions, &ctx, &market_data).expect("should succeed");
+        let outcome = value_positions(&positions, &ctx, &market_data).expect("should succeed");
         // 10 * 150 = 1500 USD -> 1500 * 10 = 15000 SEK
-        assert_eq!(result.total.amount, 15000.0);
-        assert_eq!(result.total.currency, sek);
+        assert_eq!(outcome.value.total.amount, 15000.0);
+        assert_eq!(outcome.value.total.currency, sek);
     }
 
     #[test]
-    fn missing_price_returns_error() {
+    fn missing_price_produces_warning_not_error() {
         let usd = Currency::new("USD");
         let aapl = InstrumentId::new("AAPL");
-        let market_data = InMemoryMarketDataService::new();
+        let mut market_data = InMemoryMarketDataService::new();
+        market_data.freeze();
 
         let positions = vec![Position {
             instrument_id: aapl,
@@ -146,18 +171,55 @@ mod tests {
         }];
         let ctx = CalculationContext::new(usd, date());
 
-        let result = value_positions(&positions, &ctx, &market_data);
-        assert!(result.is_err());
+        let outcome = value_positions(&positions, &ctx, &market_data).expect("should succeed");
+        assert!(outcome.has_warnings());
+        assert_eq!(outcome.warnings.len(), 1);
+        assert_eq!(outcome.value.positions.len(), 0);
+        assert_eq!(outcome.value.total.amount, 0.0);
+    }
+
+    #[test]
+    fn partial_success_with_mixed_availability() {
+        let usd = Currency::new("USD");
+        let aapl = InstrumentId::new("AAPL");
+        let msft = InstrumentId::new("MSFT");
+
+        let mut market_data = InMemoryMarketDataService::new();
+        // Only AAPL has a price; MSFT is missing
+        market_data.add_price(&aapl, date(), Price::new(150.0));
+        market_data.freeze();
+
+        let positions = vec![
+            Position {
+                instrument_id: aapl,
+                quantity: Quantity::new(100.0),
+                currency: usd,
+            },
+            Position {
+                instrument_id: msft,
+                quantity: Quantity::new(50.0),
+                currency: usd,
+            },
+        ];
+        let ctx = CalculationContext::new(usd, date());
+
+        let outcome = value_positions(&positions, &ctx, &market_data).expect("should succeed");
+        // AAPL valued, MSFT skipped with warning
+        assert_eq!(outcome.value.positions.len(), 1);
+        assert_eq!(outcome.value.total.amount, 15000.0);
+        assert_eq!(outcome.warnings.len(), 1);
     }
 
     #[test]
     fn empty_positions_returns_zero() {
         let sek = Currency::new("SEK");
-        let market_data = InMemoryMarketDataService::new();
+        let mut market_data = InMemoryMarketDataService::new();
+        market_data.freeze();
         let ctx = CalculationContext::new(sek, date());
 
-        let result = value_positions(&[], &ctx, &market_data).expect("should succeed");
-        assert_eq!(result.total.amount, 0.0);
-        assert!(result.positions.is_empty());
+        let outcome = value_positions(&[], &ctx, &market_data).expect("should succeed");
+        assert_eq!(outcome.value.total.amount, 0.0);
+        assert!(outcome.value.positions.is_empty());
+        assert!(!outcome.has_warnings());
     }
 }

@@ -19,6 +19,12 @@ benchmarks/**/Cargo.lock
 # OS
 .DS_Store
 
+# Secrets / env
+.env
+
+# Cache
+.cache/
+
 # Python
 .venv/
 *.so

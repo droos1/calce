@@ -19,18 +19,37 @@ pub fn calce_err_to_py(err: calce_core::error::CalceError) -> PyErr {
         E::NoTradesFound(_) => NoTradesFoundError::new_err(err.to_string()),
         E::CurrencyMismatch(_) => CurrencyMismatchError::new_err(err.to_string()),
         E::InsufficientData { .. } => InsufficientDataError::new_err(err.to_string()),
-        E::DataError(_) => DataError::new_err(err.to_string()),
+        E::DataError { .. } => DataError::new_err(err.to_string()),
+        E::CurrencyConflict { .. } => CurrencyMismatchError::new_err(err.to_string()),
     }
 }
 
 pub fn register(parent: &Bound<'_, PyModule>) -> PyResult<()> {
     parent.add("CalceError", parent.py().get_type::<CalceError>())?;
-    parent.add("UnauthorizedError", parent.py().get_type::<UnauthorizedError>())?;
-    parent.add("PriceNotFoundError", parent.py().get_type::<PriceNotFoundError>())?;
-    parent.add("FxRateNotFoundError", parent.py().get_type::<FxRateNotFoundError>())?;
-    parent.add("NoTradesFoundError", parent.py().get_type::<NoTradesFoundError>())?;
-    parent.add("CurrencyMismatchError", parent.py().get_type::<CurrencyMismatchError>())?;
-    parent.add("InsufficientDataError", parent.py().get_type::<InsufficientDataError>())?;
+    parent.add(
+        "UnauthorizedError",
+        parent.py().get_type::<UnauthorizedError>(),
+    )?;
+    parent.add(
+        "PriceNotFoundError",
+        parent.py().get_type::<PriceNotFoundError>(),
+    )?;
+    parent.add(
+        "FxRateNotFoundError",
+        parent.py().get_type::<FxRateNotFoundError>(),
+    )?;
+    parent.add(
+        "NoTradesFoundError",
+        parent.py().get_type::<NoTradesFoundError>(),
+    )?;
+    parent.add(
+        "CurrencyMismatchError",
+        parent.py().get_type::<CurrencyMismatchError>(),
+    )?;
+    parent.add(
+        "InsufficientDataError",
+        parent.py().get_type::<InsufficientDataError>(),
+    )?;
     parent.add("DataError", parent.py().get_type::<DataError>())?;
     Ok(())
 }

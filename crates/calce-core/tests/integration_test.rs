@@ -1,21 +1,21 @@
 use chrono::NaiveDate;
 
 use calce_core::auth::{Role, SecurityContext};
-use calce_core::engine::CalcEngine;
+use calce_core::calc::aggregation::aggregate_positions;
 use calce_core::calc::market_value::value_positions;
 use calce_core::context::CalculationContext;
 use calce_core::domain::account::AccountId;
 use calce_core::domain::currency::Currency;
 use calce_core::domain::fx_rate::FxRate;
 use calce_core::domain::instrument::InstrumentId;
-use calce_core::calc::aggregation::aggregate_positions;
 use calce_core::domain::price::Price;
 use calce_core::domain::quantity::Quantity;
 use calce_core::domain::trade::Trade;
 use calce_core::domain::user::UserId;
 use calce_core::error::CalceError;
+use calce_core::reports::portfolio::portfolio_report;
 use calce_core::services::market_data::InMemoryMarketDataService;
-use calce_core::services::user_data::InMemoryUserDataService;
+use calce_core::services::user_data::{InMemoryUserDataService, UserDataService};
 
 fn setup_multi_currency_scenario() -> (
     InMemoryMarketDataService,
@@ -38,6 +38,7 @@ fn setup_multi_currency_scenario() -> (
     market_data.add_price(&vow3, date, Price::new(120.0));
     market_data.add_fx_rate(FxRate::new(usd, sek, 10.5), date);
     market_data.add_fx_rate(FxRate::new(eur, sek, 11.4), date);
+    market_data.freeze();
 
     let mut user_data = InMemoryUserDataService::new();
 
@@ -76,21 +77,21 @@ fn setup_multi_currency_scenario() -> (
 }
 
 // ---------------------------------------------------------------------------
-// End-to-end tests via CalcEngine
+// End-to-end: auth + aggregation + valuation
 // ---------------------------------------------------------------------------
 
 #[test]
-fn engine_multi_currency_portfolio() {
+fn multi_currency_portfolio() {
     let (market_data, user_data, alice, date) = setup_multi_currency_scenario();
     let sek = Currency::new("SEK");
 
-    let ctx = CalculationContext::new(sek, date);
     let security_ctx = SecurityContext::new(alice.clone(), Role::User);
-    let engine = CalcEngine::new(&ctx, &security_ctx, &market_data, &user_data);
-
-    let result = engine
-        .market_value_for_user(&alice)
-        .expect("calculation should succeed");
+    let trades = user_data.get_trades(&security_ctx, &alice).unwrap();
+    let positions = aggregate_positions(&trades, date).unwrap();
+    let ctx = CalculationContext::new(sek, date);
+    let result = value_positions(&positions, &ctx, &market_data)
+        .expect("should succeed")
+        .value;
 
     // AAPL: 80 * 150 = 12,000 USD → 12,000 * 10.5 = 126,000 SEK
     // VOW3: 50 * 120 = 6,000 EUR → 6,000 * 11.4 = 68,400 SEK
@@ -113,16 +114,12 @@ fn engine_multi_currency_portfolio() {
 }
 
 #[test]
-fn engine_unauthorized_access_rejected() {
-    let (market_data, user_data, alice, date) = setup_multi_currency_scenario();
-    let sek = Currency::new("SEK");
+fn unauthorized_access_rejected() {
+    let (_market_data, user_data, alice, _date) = setup_multi_currency_scenario();
     let bob = UserId::new("bob");
 
-    let ctx = CalculationContext::new(sek, date);
     let security_ctx = SecurityContext::new(bob.clone(), Role::User);
-    let engine = CalcEngine::new(&ctx, &security_ctx, &market_data, &user_data);
-
-    let result = engine.market_value_for_user(&alice);
+    let result = user_data.get_trades(&security_ctx, &alice);
 
     match result.unwrap_err() {
         CalceError::Unauthorized { requester, target } => {
@@ -134,21 +131,17 @@ fn engine_unauthorized_access_rejected() {
 }
 
 #[test]
-fn engine_admin_can_access_any_user() {
-    let (market_data, user_data, alice, date) = setup_multi_currency_scenario();
-    let sek = Currency::new("SEK");
+fn admin_can_access_any_user() {
+    let (_market_data, user_data, alice, _date) = setup_multi_currency_scenario();
 
-    let ctx = CalculationContext::new(sek, date);
     let security_ctx = SecurityContext::system();
-    let engine = CalcEngine::new(&ctx, &security_ctx, &market_data, &user_data);
-
-    let result = engine.market_value_for_user(&alice);
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap().positions.len(), 2);
+    let trades = user_data.get_trades(&security_ctx, &alice);
+    assert!(trades.is_ok());
+    assert!(!trades.unwrap().is_empty());
 }
 
 #[test]
-fn engine_retroactive_calculation() {
+fn retroactive_calculation() {
     let alice = UserId::new("alice");
     let acct = AccountId::new("alice-usd");
     let usd = Currency::new("USD");
@@ -159,6 +152,7 @@ fn engine_retroactive_calculation() {
 
     let mut market_data = InMemoryMarketDataService::new();
     market_data.add_price(&aapl, early, Price::new(140.0));
+    market_data.freeze();
 
     let mut user_data = InMemoryUserDataService::new();
     user_data.add_trade(Trade {
@@ -180,13 +174,13 @@ fn engine_retroactive_calculation() {
         date: late,
     });
 
-    let ctx = CalculationContext::new(usd, early);
     let security_ctx = SecurityContext::new(alice.clone(), Role::User);
-    let engine = CalcEngine::new(&ctx, &security_ctx, &market_data, &user_data);
-
-    let result = engine
-        .market_value_for_user(&alice)
-        .expect("calculation should succeed");
+    let trades = user_data.get_trades(&security_ctx, &alice).unwrap();
+    let positions = aggregate_positions(&trades, early).unwrap();
+    let ctx = CalculationContext::new(usd, early);
+    let result = value_positions(&positions, &ctx, &market_data)
+        .expect("should succeed")
+        .value;
 
     assert_eq!(result.positions.len(), 1);
     assert_eq!(result.positions[0].quantity.value(), 50.0);
@@ -212,6 +206,7 @@ fn value_positions_multi_currency() {
     market_data.add_price(&vow3, date, Price::new(120.0));
     market_data.add_fx_rate(FxRate::new(usd, sek, 10.5), date);
     market_data.add_fx_rate(FxRate::new(eur, sek, 11.4), date);
+    market_data.freeze();
 
     let positions = vec![
         calce_core::domain::position::Position {
@@ -227,7 +222,9 @@ fn value_positions_multi_currency() {
     ];
     let ctx = CalculationContext::new(sek, date);
 
-    let result = value_positions(&positions, &ctx, &market_data).unwrap();
+    let result = value_positions(&positions, &ctx, &market_data)
+        .unwrap()
+        .value;
 
     assert_eq!(result.total.amount, 194_400.0);
     assert_eq!(result.total.currency, sek);
@@ -263,25 +260,28 @@ fn aggregate_then_value() {
     ];
 
     // Step 1: aggregate trades into positions
-    let positions = aggregate_positions(&trades, date);
+    let positions = aggregate_positions(&trades, date).unwrap();
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].quantity.value(), 60.0);
 
     // Step 2: value positions
     let mut market_data = InMemoryMarketDataService::new();
     market_data.add_price(&aapl, date, Price::new(150.0));
+    market_data.freeze();
     let ctx = CalculationContext::new(usd, date);
 
-    let result = value_positions(&positions, &ctx, &market_data).unwrap();
+    let result = value_positions(&positions, &ctx, &market_data)
+        .unwrap()
+        .value;
     assert_eq!(result.total.amount, 9_000.0); // 60 * 150
 }
 
 // ---------------------------------------------------------------------------
-// Portfolio report — engine-level integration test
+// Portfolio report — full pipeline integration test
 // ---------------------------------------------------------------------------
 
 #[test]
-fn engine_portfolio_report() {
+fn portfolio_report_integration() {
     let alice = UserId::new("alice");
     let acct = AccountId::new("alice-usd");
     let usd = Currency::new("USD");
@@ -305,25 +305,21 @@ fn engine_portfolio_report() {
     for date in [today, day_ago, week_ago, year_ago, prev_year_end] {
         market_data.add_fx_rate(FxRate::new(usd, sek, 10.0), date);
     }
+    market_data.freeze();
 
-    let mut user_data = InMemoryUserDataService::new();
-    user_data.add_trade(Trade {
-        user_id: alice.clone(),
+    let trades = vec![Trade {
+        user_id: alice,
         account_id: acct,
         instrument_id: aapl,
         quantity: Quantity::new(100.0),
         price: Price::new(150.0),
         currency: usd,
         date: trade_date,
-    });
+    }];
 
     let ctx = CalculationContext::new(sek, today);
-    let security_ctx = SecurityContext::new(alice.clone(), Role::User);
-    let engine = CalcEngine::new(&ctx, &security_ctx, &market_data, &user_data);
-
-    let report = engine
-        .portfolio_report_for_user(&alice)
-        .expect("report should succeed");
+    let outcome = portfolio_report(&trades, &ctx, &market_data).expect("report should succeed");
+    let report = &outcome.value;
 
     // Market value: 100 * 200 * 10 = 200,000 SEK
     assert_eq!(report.market_value.total.amount, 200_000.0);

@@ -64,6 +64,35 @@ impl UserDataRepo {
         Ok(())
     }
 
+    pub async fn list_users(&self) -> DataResult<Vec<(String, Option<String>, i64)>> {
+        #[derive(sqlx::FromRow)]
+        struct Row {
+            id: String,
+            email: Option<String>,
+            trade_count: Option<i64>,
+        }
+        let rows = sqlx::query_as::<_, Row>(
+            "SELECT u.id, u.email, COUNT(t.id)::BIGINT as trade_count \
+             FROM users u LEFT JOIN trades t ON u.id = t.user_id \
+             GROUP BY u.id, u.email ORDER BY u.id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.id, r.email, r.trade_count.unwrap_or(0)))
+            .collect())
+    }
+
+    pub async fn count_users_and_trades(&self) -> DataResult<(i64, i64)> {
+        let row = sqlx::query_as::<_, (i64, i64)>(
+            "SELECT (SELECT COUNT(*) FROM users), (SELECT COUNT(*) FROM trades)",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
     pub async fn insert_trade(&self, trade: &Trade) -> DataResult<()> {
         sqlx::query(
             "INSERT INTO trades (user_id, account_id, instrument_id, quantity, price, currency, trade_date) \

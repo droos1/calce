@@ -35,6 +35,7 @@ pub(crate) fn seed_market_data() -> InMemoryMarketDataService {
     add_daily_fx_rates(&mut svc, year_ago, today, usd, sek, 10.5);
     add_daily_fx_rates(&mut svc, year_ago, today, eur, sek, 11.2);
 
+    svc.freeze();
     svc
 }
 
@@ -131,14 +132,20 @@ mod tests {
         let vow3_vol = calculate_volatility(&vow3, today, 365, &md).unwrap();
 
         // Seed data uses 2% noise for AAPL, 3% for VOW3 — VOW3 should be higher
-        println!("AAPL: {:.1}% annualized ({} obs, {} to {})",
+        println!(
+            "AAPL: {:.1}% annualized ({} obs, {} to {})",
             aapl_vol.annualized_volatility * 100.0,
             aapl_vol.num_observations,
-            aapl_vol.start_date, aapl_vol.end_date);
-        println!("VOW3: {:.1}% annualized ({} obs, {} to {})",
+            aapl_vol.start_date,
+            aapl_vol.end_date
+        );
+        println!(
+            "VOW3: {:.1}% annualized ({} obs, {} to {})",
             vow3_vol.annualized_volatility * 100.0,
             vow3_vol.num_observations,
-            vow3_vol.start_date, vow3_vol.end_date);
+            vow3_vol.start_date,
+            vow3_vol.end_date
+        );
 
         // Sanity: annualized vol should be in a plausible range (1%-100%)
         assert!(aapl_vol.annualized_volatility > 0.01);

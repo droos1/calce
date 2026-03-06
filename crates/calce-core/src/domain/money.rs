@@ -49,6 +49,22 @@ impl Money {
         })
     }
 
+    /// # Errors
+    ///
+    /// Returns `CurrencyMismatch` if currencies differ.
+    pub fn checked_sub(self, other: Self) -> Result<Money, CurrencyMismatch> {
+        if self.currency != other.currency {
+            return Err(CurrencyMismatch {
+                expected: self.currency,
+                actual: other.currency,
+            });
+        }
+        Ok(Money {
+            amount: self.amount - other.amount,
+            currency: self.currency,
+        })
+    }
+
     /// Convert using a directed FX rate. Validates that this Money's currency
     /// matches the rate's `from` currency; result is in the rate's `to` currency.
     ///
@@ -117,5 +133,22 @@ mod tests {
         let a = Money::new(100.0, Currency::new("USD"));
         let b = Money::new(200.0, Currency::new("EUR"));
         assert!(a.checked_add(b).is_err());
+    }
+
+    #[test]
+    fn checked_sub_same_currency() {
+        let usd = Currency::new("USD");
+        let a = Money::new(300.0, usd);
+        let b = Money::new(100.0, usd);
+        let diff = a.checked_sub(b).expect("same currency");
+        assert_eq!(diff.amount, 200.0);
+        assert_eq!(diff.currency, usd);
+    }
+
+    #[test]
+    fn checked_sub_different_currencies_returns_error() {
+        let a = Money::new(100.0, Currency::new("USD"));
+        let b = Money::new(200.0, Currency::new("EUR"));
+        assert!(a.checked_sub(b).is_err());
     }
 }
