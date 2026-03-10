@@ -6,12 +6,15 @@ Axum HTTP server that wires `calce-core` calculations to REST endpoints.
 
 ```
 src/
-├── main.rs       — router setup, server startup, integration tests
-├── routes.rs     — handler functions (one per endpoint)
-├── auth.rs       — X-User-Id / X-Role header extraction → SecurityContext
-├── error.rs      — CalceError → HTTP status code mapping
-├── state.rs      — AppState (shared service references)
-└── seed.rs       — in-memory test data + seed sanity tests
+├── main.rs           — router setup, server startup, integration tests
+├── routes/
+│   ├── mod.rs        — route registration
+│   ├── calc.rs       — calculation + data exploration endpoints
+│   └── users.rs      — user CRUD endpoints (admin-only create/delete)
+├── auth.rs           — X-User-Id / X-Role header extraction → SecurityContext
+├── error.rs          — CalceError → HTTP status code mapping
+├── state.rs          — AppState (shared service references)
+└── seed.rs           — in-memory test data + seed sanity tests
 ```
 
 ## URL Convention
@@ -51,6 +54,8 @@ Missing `X-User-Id` on any authenticated route → 401 Unauthorized.
 |-----------------------------|-------------|-------|
 | `DataError::Unauthorized`   | 403         | User lacks access to target user's data |
 | `DataError::NoTradesFound`  | 404         | |
+| `DataError::NotFound`       | 404         | Generic not-found (e.g. user CRUD) |
+| `DataError::Conflict`       | 409         | Unique/FK constraint violation |
 | `DataError::Sqlx`           | 500         | Database error |
 | `DataError::InvalidDbData`  | 500         | Corrupt data in DB |
 | `DataError::Calc(inner)`    | delegates   | Maps the inner `CalceError` |

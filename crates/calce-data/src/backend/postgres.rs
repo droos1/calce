@@ -78,7 +78,7 @@ impl DataBackend for PostgresBackend {
     }
 
     async fn list_users(&self) -> DataResult<Vec<UserSummary>> {
-        let rows = self.user_data_repo.list_users().await?;
+        let rows = self.user_data_repo.list_users_with_trade_counts().await?;
         Ok(rows
             .into_iter()
             .map(|(id, email, trade_count)| UserSummary {

@@ -1,5 +1,7 @@
 use axum::Json;
+use axum::Router;
 use axum::extract::{Path, Query, State};
+use axum::routing::get;
 use calce_core::calc::aggregation;
 use calce_core::calc::market_value::{self, MarketValueResult};
 use calce_core::calc::volatility::{self, VolatilityResult};
@@ -16,17 +18,34 @@ use crate::auth::Auth;
 use crate::error::ApiError;
 use crate::state::AppState;
 
-#[derive(Deserialize)]
-pub struct CalcParams {
-    pub as_of_date: NaiveDate,
-    pub base_currency: String,
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/v1/users/{user_id}/market-value", get(market_value))
+        .route("/v1/users/{user_id}/portfolio", get(portfolio_report))
+        .route(
+            "/v1/instruments/{instrument_id}/volatility",
+            get(volatility),
+        )
+        .route("/v1/data/stats", get(data_stats))
+        .route("/v1/data/users", get(data_users))
+        .route("/v1/data/instruments", get(data_instruments))
+        .route(
+            "/v1/data/instruments/{instrument_id}/prices",
+            get(instrument_prices),
+        )
 }
 
 #[derive(Deserialize)]
-pub struct VolatilityParams {
-    pub as_of_date: NaiveDate,
+struct CalcParams {
+    as_of_date: NaiveDate,
+    base_currency: String,
+}
+
+#[derive(Deserialize)]
+struct VolatilityParams {
+    as_of_date: NaiveDate,
     #[serde(default = "default_lookback")]
-    pub lookback_days: u32,
+    lookback_days: u32,
 }
 
 fn default_lookback() -> u32 {
@@ -37,7 +56,7 @@ fn parse_currency(s: &str) -> Result<Currency, ApiError> {
     Currency::try_new(s).map_err(|_| ApiError::BadRequest(format!("Invalid currency code: {s}")))
 }
 
-pub async fn market_value(
+async fn market_value(
     State(state): State<AppState>,
     Auth(security_ctx): Auth,
     Path(user_id): Path<String>,
@@ -63,7 +82,7 @@ pub async fn market_value(
     Ok(Json(outcome.value))
 }
 
-pub async fn portfolio_report(
+async fn portfolio_report(
     State(state): State<AppState>,
     Auth(security_ctx): Auth,
     Path(user_id): Path<String>,
@@ -93,7 +112,7 @@ pub async fn portfolio_report(
     Ok(Json(outcome.value))
 }
 
-pub async fn volatility(
+async fn volatility(
     State(state): State<AppState>,
     Auth(_security_ctx): Auth,
     Path(instrument_id): Path<String>,
@@ -122,17 +141,17 @@ pub async fn volatility(
 
 // ── Data exploration (no auth required — developer tool) ──────────────
 
-pub async fn data_stats(State(state): State<AppState>) -> Result<Json<DataStats>, ApiError> {
+async fn data_stats(State(state): State<AppState>) -> Result<Json<DataStats>, ApiError> {
     let stats = state.loader.data_stats().await?;
     Ok(Json(stats))
 }
 
-pub async fn data_users(State(state): State<AppState>) -> Result<Json<Vec<UserSummary>>, ApiError> {
+async fn data_users(State(state): State<AppState>) -> Result<Json<Vec<UserSummary>>, ApiError> {
     let users = state.loader.list_users().await?;
     Ok(Json(users))
 }
 
-pub async fn data_instruments(
+async fn data_instruments(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<InstrumentSummary>>, ApiError> {
     let instruments = state.loader.list_instruments().await?;
@@ -140,18 +159,18 @@ pub async fn data_instruments(
 }
 
 #[derive(Deserialize)]
-pub struct PriceHistoryParams {
-    pub from: NaiveDate,
-    pub to: NaiveDate,
+struct PriceHistoryParams {
+    from: NaiveDate,
+    to: NaiveDate,
 }
 
 #[derive(Serialize)]
-pub struct PricePoint {
-    pub date: NaiveDate,
-    pub price: f64,
+struct PricePoint {
+    date: NaiveDate,
+    price: f64,
 }
 
-pub async fn instrument_prices(
+async fn instrument_prices(
     State(state): State<AppState>,
     Path(instrument_id): Path<String>,
     Query(params): Query<PriceHistoryParams>,
@@ -169,5 +188,5 @@ pub async fn instrument_prices(
 }
 
 pub async fn explorer() -> axum::response::Html<&'static str> {
-    axum::response::Html(include_str!("../../../tools/api-explorer.html"))
+    axum::response::Html(include_str!("../../../../tools/api-explorer.html"))
 }

@@ -1,5 +1,6 @@
 use calce_core::domain::user::UserId;
 use calce_core::error::CalceError;
+use sqlx::Error as SqlxError;
 
 pub type DataResult<T> = Result<T, DataError>;
 
@@ -26,4 +27,28 @@ pub enum DataError {
         value: String,
         reason: String,
     },
+
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    #[error("{0}")]
+    Conflict(String),
+}
+
+impl DataError {
+    /// Convert a sqlx error into a `Conflict` if it's a unique or FK violation,
+    /// otherwise fall through to a generic `Sqlx` error.
+    pub fn from_constraint_violation(err: SqlxError, entity: &str, id: &str) -> Self {
+        if let SqlxError::Database(ref db_err) = err {
+            if db_err.is_unique_violation() {
+                return Self::Conflict(format!("{entity} '{id}' already exists"));
+            }
+            if db_err.is_foreign_key_violation() {
+                return Self::Conflict(format!(
+                    "cannot delete {entity} '{id}': has dependent records"
+                ));
+            }
+        }
+        Self::from(err)
+    }
 }

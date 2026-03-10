@@ -1,4 +1,5 @@
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
+use serde::Serialize;
 use sqlx::PgPool;
 
 use calce_core::domain::account::AccountId;
@@ -10,6 +11,14 @@ use calce_core::domain::trade::Trade;
 use calce_core::domain::user::UserId;
 
 use crate::error::{DataError, DataResult};
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub struct User {
+    pub id: String,
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
 
 pub struct UserDataRepo {
     pool: PgPool,
@@ -34,7 +43,7 @@ impl UserDataRepo {
             .collect::<DataResult<Vec<_>>>()
     }
 
-    pub async fn insert_user(&self, id: &UserId, email: Option<&str>) -> DataResult<()> {
+    pub async fn upsert_user(&self, id: &UserId, email: Option<&str>) -> DataResult<()> {
         sqlx::query(
             "INSERT INTO users (id, email) VALUES ($1, $2) \
              ON CONFLICT (id) DO NOTHING",
@@ -66,7 +75,9 @@ impl UserDataRepo {
         Ok(())
     }
 
-    pub async fn list_users(&self) -> DataResult<Vec<(String, Option<String>, i64)>> {
+    pub async fn list_users_with_trade_counts(
+        &self,
+    ) -> DataResult<Vec<(String, Option<String>, i64)>> {
         #[derive(sqlx::FromRow)]
         struct Row {
             id: String,
@@ -110,6 +121,67 @@ impl UserDataRepo {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    // ── CRUD operations ──────────────────────────────────────────────────
+
+    pub async fn find_all_users(&self) -> DataResult<Vec<User>> {
+        let users = sqlx::query_as::<_, User>(
+            "SELECT id, email, name, created_at FROM users ORDER BY created_at",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(users)
+    }
+
+    pub async fn get_user(&self, id: &str) -> DataResult<User> {
+        sqlx::query_as::<_, User>("SELECT id, email, name, created_at FROM users WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| DataError::NotFound(format!("user '{id}'")))
+    }
+
+    pub async fn create_user(
+        &self,
+        id: &str,
+        email: Option<&str>,
+        name: Option<&str>,
+    ) -> DataResult<User> {
+        sqlx::query_as::<_, User>(
+            "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) \
+             RETURNING id, email, name, created_at",
+        )
+        .bind(id)
+        .bind(email)
+        .bind(name)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DataError::from_constraint_violation(e, "user", id))
+    }
+
+    pub async fn update_user_name(&self, id: &str, name: Option<&str>) -> DataResult<User> {
+        sqlx::query_as::<_, User>(
+            "UPDATE users SET name = $2 WHERE id = $1 \
+             RETURNING id, email, name, created_at",
+        )
+        .bind(id)
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| DataError::NotFound(format!("user '{id}'")))
+    }
+
+    /// # Errors
+    ///
+    /// Returns `Conflict` if the user has dependent records (accounts, trades).
+    pub async fn delete_user(&self, id: &str) -> DataResult<bool> {
+        let result = sqlx::query("DELETE FROM users WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DataError::from_constraint_violation(e, "user", id))?;
+        Ok(result.rows_affected() > 0)
     }
 }
 

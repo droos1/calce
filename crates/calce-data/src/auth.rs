@@ -33,4 +33,9 @@ impl SecurityContext {
     pub fn can_access(&self, target: &UserId) -> bool {
         permissions::can_access_user_data(self, target)
     }
+
+    #[must_use]
+    pub fn is_admin(&self) -> bool {
+        self.role == Role::Admin
+    }
 }

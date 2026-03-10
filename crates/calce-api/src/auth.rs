@@ -4,7 +4,10 @@ use axum::http::request::Parts;
 use axum::response::{IntoResponse, Response};
 use calce_core::domain::user::UserId;
 use calce_data::auth::{Role, SecurityContext};
+use calce_data::error::DataError;
 use serde_json::json;
+
+use crate::error::ApiError;
 
 pub struct Auth(pub SecurityContext);
 
@@ -43,5 +46,28 @@ impl<S: Send + Sync> FromRequestParts<S> for Auth {
             });
 
         Ok(Auth(SecurityContext::new(UserId::new(user_id), role)))
+    }
+}
+
+pub fn require_admin(ctx: &SecurityContext) -> Result<(), ApiError> {
+    if ctx.is_admin() {
+        Ok(())
+    } else {
+        Err(ApiError::Data(DataError::Unauthorized {
+            requester: ctx.user_id.clone(),
+            target: UserId::new("*"),
+        }))
+    }
+}
+
+pub fn require_access(ctx: &SecurityContext, target: &str) -> Result<(), ApiError> {
+    let target_id = UserId::new(target);
+    if ctx.can_access(&target_id) {
+        Ok(())
+    } else {
+        Err(ApiError::Data(DataError::Unauthorized {
+            requester: ctx.user_id.clone(),
+            target: target_id,
+        }))
     }
 }

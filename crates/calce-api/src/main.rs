@@ -24,31 +24,14 @@ use state::AppState;
 fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(routes::explorer))
-        .route(
-            "/v1/users/{user_id}/market-value",
-            get(routes::market_value),
-        )
-        .route(
-            "/v1/users/{user_id}/portfolio",
-            get(routes::portfolio_report),
-        )
-        .route(
-            "/v1/instruments/{instrument_id}/volatility",
-            get(routes::volatility),
-        )
-        .route("/v1/data/stats", get(routes::data_stats))
-        .route("/v1/data/users", get(routes::data_users))
-        .route("/v1/data/instruments", get(routes::data_instruments))
-        .route(
-            "/v1/data/instruments/{instrument_id}/prices",
-            get(routes::instrument_prices),
-        )
+        .merge(routes::calc_routes())
+        .merge(routes::user_routes())
         .layer(CorsLayer::very_permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
 
-async fn create_postgres_loader() -> DataLoader {
+async fn create_postgres_loader() -> (DataLoader, PgPool) {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://calce:calce@localhost:5433/calce".into());
 
@@ -62,8 +45,11 @@ async fn create_postgres_loader() -> DataLoader {
         .expect("failed to run migrations");
 
     tracing::info!("Backend: postgres ({database_url})");
-    let backend = PostgresBackend::new(MarketDataRepo::new(pool.clone()), UserDataRepo::new(pool));
-    DataLoader::new(backend)
+    let backend = PostgresBackend::new(
+        MarketDataRepo::new(pool.clone()),
+        UserDataRepo::new(pool.clone()),
+    );
+    (DataLoader::new(backend), pool)
 }
 
 #[cfg(feature = "njorda")]
@@ -170,9 +156,12 @@ async fn main() {
 
     let backend = std::env::var("CALCE_BACKEND").unwrap_or_else(|_| "postgres".into());
 
-    let loader = match backend.as_str() {
-        "postgres" => create_postgres_loader().await,
-        "njorda-cache" => create_njorda_cache_loader(),
+    let (loader, pool) = match backend.as_str() {
+        "postgres" => {
+            let (loader, pool) = create_postgres_loader().await;
+            (loader, Some(pool))
+        }
+        "njorda-cache" => (create_njorda_cache_loader(), None),
         other => {
             eprintln!("Unknown CALCE_BACKEND: {other}");
             eprintln!("Options: postgres (default), njorda-cache");
@@ -182,6 +171,7 @@ async fn main() {
 
     let state = AppState {
         loader: Arc::new(loader),
+        pool,
     };
 
     let app = build_router(state);
@@ -213,6 +203,7 @@ mod tests {
         let loader = DataLoader::new(backend);
         AppState {
             loader: Arc::new(loader),
+            pool: None,
         }
     }
 

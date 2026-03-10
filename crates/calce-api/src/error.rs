@@ -39,6 +39,8 @@ fn data_error_response(err: &DataError) -> (StatusCode, &'static str, String) {
     match err {
         DataError::Unauthorized { .. } => (StatusCode::FORBIDDEN, "UNAUTHORIZED", err.to_string()),
         DataError::NoTradesFound(_) => (StatusCode::NOT_FOUND, "NO_TRADES_FOUND", err.to_string()),
+        DataError::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND", err.to_string()),
+        DataError::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT", err.to_string()),
         DataError::Calc(inner) => calc_error_response(inner),
         DataError::Sqlx(_) | DataError::Migration(_) | DataError::InvalidDbData { .. } => (
             StatusCode::INTERNAL_SERVER_ERROR,
