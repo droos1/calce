@@ -2,8 +2,8 @@ use axum::extract::FromRequestParts;
 use axum::http::StatusCode;
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Response};
-use calce_core::auth::{Role, SecurityContext};
 use calce_core::domain::user::UserId;
+use calce_data::auth::{Role, SecurityContext};
 use serde_json::json;
 
 pub struct Auth(pub SecurityContext);

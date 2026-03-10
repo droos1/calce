@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::routing::get;
+use calce_data::backend::PostgresBackend;
 use calce_data::loader::DataLoader;
 use calce_data::repo::market_data::MarketDataRepo;
 use calce_data::repo::user_data::UserDataRepo;
@@ -61,14 +62,15 @@ async fn create_postgres_loader() -> DataLoader {
         .expect("failed to run migrations");
 
     tracing::info!("Backend: postgres ({database_url})");
-    DataLoader::new(MarketDataRepo::new(pool.clone()), UserDataRepo::new(pool))
+    let backend = PostgresBackend::new(MarketDataRepo::new(pool.clone()), UserDataRepo::new(pool));
+    DataLoader::new(backend)
 }
 
 #[cfg(feature = "njorda")]
 fn create_njorda_cache_loader() -> DataLoader {
     use std::time::Instant;
 
-    use calce_core::services::user_data::InMemoryUserDataService;
+    use calce_data::backend::NjordaBackend;
     use calce_data::njorda::{self, cache};
 
     let cache_path = cache::cache_path();
@@ -89,7 +91,7 @@ fn create_njorda_cache_loader() -> DataLoader {
                     market_data.fx_rate_count(),
                     mem_mb,
                 );
-                return DataLoader::in_memory(market_data, InMemoryUserDataService::new());
+                return DataLoader::new(NjordaBackend::new(market_data));
             }
             Err(e) => {
                 tracing::warn!("Service cache invalid, rebuilding: {e}");
@@ -149,7 +151,7 @@ fn create_njorda_cache_loader() -> DataLoader {
         cached.metadata.fetched_at.format("%Y-%m-%d %H:%M UTC"),
     );
 
-    DataLoader::in_memory(market_data, InMemoryUserDataService::new())
+    DataLoader::new(NjordaBackend::new(market_data))
 }
 
 #[cfg(not(feature = "njorda"))]
@@ -204,7 +206,11 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_state() -> AppState {
-        let loader = DataLoader::in_memory(seed::seed_market_data(), seed::seed_user_data());
+        let backend = calce_data::backend::InMemoryBackend::new(
+            seed::seed_market_data(),
+            seed::seed_user_data(),
+        );
+        let loader = DataLoader::new(backend);
         AppState {
             loader: Arc::new(loader),
         }

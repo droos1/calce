@@ -13,37 +13,37 @@ Financial calculation engine for portfolio tracking, valuation, and analytics.
 ## Crate Structure
 
 ```
-calce-core    (sync, pure — domain types, calc functions, service traits)
+calce-core    (sync, pure — domain types, calc functions, service traits, no auth)
     ↑
-calce-data    (async — sqlx repos, AsyncCalcEngine, Postgres access)
+calce-data    (async — data access, authorization, input assembly)
     ↑
-calce-api     (async — axum HTTP handlers, thin layer over AsyncCalcEngine)
+calce-api     (async — axum HTTP handlers, extracts identity, routes to data+calc)
 
-calce-python  (PyO3 bindings, depends on calce-core only)
+calce-python  (PyO3 bindings, depends on calce-core only — caller provides all data)
 ```
 
 ## The Sync/Async Bridge
 
-The central architectural pattern. calce-core defines sync service traits (`MarketDataService`, `UserDataService`) with in-memory implementations. calce-data bridges the gap:
+The central architectural pattern. calce-core defines sync service traits (`MarketDataService`) with in-memory implementations. calce-data bridges the gap:
 
 ```
-API handler → DataLoader.load_user_portfolio(security_ctx, user_id, ...)
-  1. Check access via permissions module   (sync)
-  2. Load trades from Postgres             (async)
+API handler → DataLoader.load_calc_inputs(security_ctx, spec)
+  1. Authorize access to all subjects      (sync, calce-data auth)
+  2. Load trades from backend              (async)
   3. Batch-load prices + FX for positions  (async, avoids N+1)
   4. Build InMemoryMarketDataService       (sync bridge object)
-  5. Return PortfolioData { trades, market_data }
+  5. Return CalcInputs { trades, market_data }
 
 API handler → aggregate_positions + value_positions  (sync, calce-core)
 ```
 
-Data is loaded async in bulk, packed into in-memory structs, then handed to pure sync functions. calce-core never sees a database.
+Data is loaded async in bulk, packed into in-memory structs, then handed to pure sync functions. calce-core never sees a database or auth types.
 
 ## Dual API
 
 **Stateful** — caller identifies _what_ to calculate (which user). `DataLoader` in calce-data loads data and packs it into in-memory services, then the API handler calls pure calc functions. Used by the HTTP API.
 
-**Stateless** — caller provides all input data directly. No data loading, no auth. Used for simulations, what-if analysis, testing, and as an embeddable library (PyO3).
+**Caller-provided** — caller constructs all input data (trades, market data) and passes it directly. No database access, no auth. The PyO3 `CalcEngine` still indexes trades by `user_id` into caller-provided `UserData`, but all data originates from the caller. Used for simulations, what-if analysis, testing, and as an embeddable library (PyO3).
 
 Both modes call the same pure `calc/` functions underneath.
 

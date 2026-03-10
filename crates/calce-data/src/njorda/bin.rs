@@ -1,7 +1,11 @@
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
 use clap::Parser;
 
 use calce_data::njorda::{self, cache};
+
+fn today() -> NaiveDate {
+    Utc::now().date_naive()
+}
 
 #[derive(Parser)]
 #[command(
@@ -12,7 +16,7 @@ struct Args {
     #[arg(long, default_value = "2023-01-01")]
     from: NaiveDate,
 
-    #[arg(long, default_value = "2026-03-06")]
+    #[arg(long, default_value_t = today())]
     to: NaiveDate,
 
     /// Force re-fetch even if cache is fresh.

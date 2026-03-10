@@ -9,13 +9,11 @@
 #![warn(clippy::pedantic)]
 
 pub mod accounting;
-pub mod auth;
 pub mod calc;
 pub mod context;
 pub mod domain;
 pub mod error;
+pub mod inputs;
 pub mod outcome;
-pub mod permissions;
 pub mod reports;
 pub mod services;
-pub mod snapshot;

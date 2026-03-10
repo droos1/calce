@@ -5,7 +5,6 @@ import calce
 
 class TestExceptionHierarchy:
     def test_all_exceptions_inherit_from_calce_error(self):
-        assert issubclass(calce.UnauthorizedError, calce.CalceError)
         assert issubclass(calce.PriceNotFoundError, calce.CalceError)
         assert issubclass(calce.FxRateNotFoundError, calce.CalceError)
         assert issubclass(calce.NoTradesFoundError, calce.CalceError)
@@ -63,13 +62,3 @@ class TestNoTradesFound:
             assert False, "Should have raised NoTradesFoundError"
         except calce.NoTradesFoundError as e:
             assert "alice" in str(e)
-
-
-class TestInvalidRole:
-    def test_invalid_role_raises(self):
-        usd = calce.Currency("USD")
-        try:
-            calce.CalcEngine(usd, date(2025, 1, 15), "alice", calce.MarketData(), calce.UserData(), role="superuser")
-            assert False, "Should have raised"
-        except ValueError as e:
-            assert "superuser" in str(e)

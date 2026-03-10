@@ -1,16 +1,34 @@
 # calce-data
 
-Async data access layer. Implements calce-core's service traits against real databases.
+Async data access layer. Provides `DataBackend` trait and implementations for loading
+trades and market data from different sources.
 
 ## Module Layout
 
 | Module | Purpose |
 |--------|---------|
-| `repo/market_data.rs` | Prices and FX rates (single lookups, history ranges, batch loading) |
-| `repo/user_data.rs` | Users, accounts, and trades |
-| `loader.rs` | AsyncCalcEngine — async orchestration bridging repos to sync calce-core |
+| `auth.rs` | `SecurityContext`, `Role` — user identity and role types |
+| `permissions.rs` | `can_access_user_data()` — centralized access-control checks |
+| `backend/mod.rs` | `DataBackend` trait — read-only interface used by `DataLoader` |
+| `backend/postgres.rs` | Postgres backend — orchestrates repo queries into `DataBackend` |
+| `backend/in_memory.rs` | In-memory backend for tests |
+| `backend/njorda.rs` | Njorda file-based backend (feature-gated: `njorda`) |
+| `repo/market_data.rs` | Postgres query layer: prices, FX rates (reads + writes) |
+| `repo/user_data.rs` | Postgres query layer: users, accounts, trades (reads + writes) |
+| `loader.rs` | `DataLoader` — wraps a `DataBackend`, adds auth checks and input assembly |
 | `config.rs` | Database connection configuration |
-| `njorda/` | Read-only njorda backend access (feature-gated: `njorda`) |
+| `njorda/` | Njorda file parsing and `InMemoryMarketDataService` builder |
+
+### Layer overview
+
+```
+DataLoader  →  DataBackend (trait)  →  PostgresBackend  →  repo/ (SQL queries)
+                                    →  InMemoryBackend
+                                    →  NjordaBackend
+```
+
+`repo/` is Postgres-specific and includes write methods (inserts) not exposed
+through `DataBackend`. It is only used by `PostgresBackend`.
 
 ## Database
 

@@ -18,33 +18,29 @@ use crate::error::{CalceError, CalceResult};
 /// Returns `CurrencyConflict` if the same instrument appears with different currencies.
 pub fn aggregate_positions(trades: &[Trade], as_of_date: NaiveDate) -> CalceResult<Vec<Position>> {
     let mut net: HashMap<InstrumentId, (Quantity, Currency)> = HashMap::new();
+    let mut conflict: Option<(InstrumentId, Currency, Currency)> = None;
 
     for trade in trades {
         if trade.date <= as_of_date {
             net.entry(trade.instrument_id.clone())
                 .and_modify(|(qty, existing_ccy)| {
-                    // Currency conflict is checked below after collection
                     if *existing_ccy == trade.currency {
                         *qty = *qty + trade.quantity;
+                    } else if conflict.is_none() {
+                        conflict =
+                            Some((trade.instrument_id.clone(), *existing_ccy, trade.currency));
                     }
                 })
                 .or_insert((trade.quantity, trade.currency));
         }
     }
 
-    // Check for currency conflicts: re-scan trades to detect any instrument
-    // that appeared with more than one currency.
-    for trade in trades {
-        if trade.date <= as_of_date
-            && let Some(&(_, existing_ccy)) = net.get(&trade.instrument_id)
-            && existing_ccy != trade.currency
-        {
-            return Err(CalceError::CurrencyConflict {
-                instrument: trade.instrument_id.clone(),
-                expected: existing_ccy,
-                actual: trade.currency,
-            });
-        }
+    if let Some((instrument, expected, actual)) = conflict {
+        return Err(CalceError::CurrencyConflict {
+            instrument,
+            expected,
+            actual,
+        });
     }
 
     let mut positions: Vec<Position> = net

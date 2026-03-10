@@ -1,6 +1,5 @@
 use chrono::NaiveDate;
 
-use calce_core::auth::{Role, SecurityContext};
 use calce_core::calc::aggregation::aggregate_positions;
 use calce_core::calc::market_value::value_positions;
 use calce_core::context::CalculationContext;
@@ -12,10 +11,9 @@ use calce_core::domain::price::Price;
 use calce_core::domain::quantity::Quantity;
 use calce_core::domain::trade::Trade;
 use calce_core::domain::user::UserId;
-use calce_core::error::CalceError;
 use calce_core::reports::portfolio::portfolio_report;
 use calce_core::services::market_data::InMemoryMarketDataService;
-use calce_core::services::user_data::{InMemoryUserDataService, UserDataService};
+use calce_core::services::user_data::InMemoryUserDataService;
 
 fn setup_multi_currency_scenario() -> (
     InMemoryMarketDataService,
@@ -77,7 +75,7 @@ fn setup_multi_currency_scenario() -> (
 }
 
 // ---------------------------------------------------------------------------
-// End-to-end: auth + aggregation + valuation
+// End-to-end: aggregation + valuation
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -85,8 +83,7 @@ fn multi_currency_portfolio() {
     let (market_data, user_data, alice, date) = setup_multi_currency_scenario();
     let sek = Currency::new("SEK");
 
-    let security_ctx = SecurityContext::new(alice.clone(), Role::User);
-    let trades = user_data.get_trades(&security_ctx, &alice).unwrap();
+    let trades = user_data.trades_for(&alice).unwrap();
     let positions = aggregate_positions(&trades, date).unwrap();
     let ctx = CalculationContext::new(sek, date);
     let result = value_positions(&positions, &ctx, &market_data)
@@ -111,33 +108,6 @@ fn multi_currency_portfolio() {
     assert_eq!(vow3_pos.quantity.value(), 50.0);
     assert_eq!(vow3_pos.market_value.amount, 6_000.0);
     assert_eq!(vow3_pos.market_value_base.amount, 68_400.0);
-}
-
-#[test]
-fn unauthorized_access_rejected() {
-    let (_market_data, user_data, alice, _date) = setup_multi_currency_scenario();
-    let bob = UserId::new("bob");
-
-    let security_ctx = SecurityContext::new(bob.clone(), Role::User);
-    let result = user_data.get_trades(&security_ctx, &alice);
-
-    match result.unwrap_err() {
-        CalceError::Unauthorized { requester, target } => {
-            assert_eq!(requester.as_str(), "bob");
-            assert_eq!(target.as_str(), "alice");
-        }
-        other => panic!("Expected Unauthorized, got: {other:?}"),
-    }
-}
-
-#[test]
-fn admin_can_access_any_user() {
-    let (_market_data, user_data, alice, _date) = setup_multi_currency_scenario();
-
-    let security_ctx = SecurityContext::system();
-    let trades = user_data.get_trades(&security_ctx, &alice);
-    assert!(trades.is_ok());
-    assert!(!trades.unwrap().is_empty());
 }
 
 #[test]
@@ -174,8 +144,7 @@ fn retroactive_calculation() {
         date: late,
     });
 
-    let security_ctx = SecurityContext::new(alice.clone(), Role::User);
-    let trades = user_data.get_trades(&security_ctx, &alice).unwrap();
+    let trades = user_data.trades_for(&alice).unwrap();
     let positions = aggregate_positions(&trades, early).unwrap();
     let ctx = CalculationContext::new(usd, early);
     let result = value_positions(&positions, &ctx, &market_data)

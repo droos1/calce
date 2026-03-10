@@ -166,6 +166,16 @@ def smoke_test(c):
 
 
 @task
+def coverage(c, html=False):
+    """Run tests with line coverage report. Use --html for a browsable HTML report."""
+    fmt = "--html --open" if html else ""
+    c.run(
+        f"cargo llvm-cov --workspace --ignore-filename-regex calce-python {fmt}",
+        pty=True,
+    )
+
+
+@task
 def bench(c, duration="10s", threads=4, connections=50):
     """Load test the API (requires running server). Uses wrk."""
     c.run(

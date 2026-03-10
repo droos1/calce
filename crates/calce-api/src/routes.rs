@@ -8,7 +8,7 @@ use calce_core::domain::currency::Currency;
 use calce_core::domain::instrument::InstrumentId;
 use calce_core::domain::user::UserId;
 use calce_core::reports::portfolio::PortfolioReport;
-use calce_data::loader::{DataStats, DateRange, InstrumentSummary, UserSummary};
+use calce_data::loader::{CalcInputSpec, DataStats, DateRange, InstrumentSummary, UserSummary};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
@@ -47,18 +47,18 @@ pub async fn market_value(
     let ctx = CalculationContext::new(base_currency, params.as_of_date);
     let user_id = UserId::new(user_id);
 
-    let date_range = DateRange {
-        from: params.as_of_date,
-        to: params.as_of_date,
+    let spec = CalcInputSpec {
+        subjects: vec![user_id],
+        base_currency,
+        date_range: DateRange {
+            from: params.as_of_date,
+            to: params.as_of_date,
+        },
     };
-    // DataLoader enforces access check via SecurityContext
-    let data = state
-        .loader
-        .load_user_portfolio(&security_ctx, &user_id, base_currency, &date_range)
-        .await?;
+    let inputs = state.loader.load_calc_inputs(&security_ctx, &spec).await?;
 
-    let positions = aggregation::aggregate_positions(&data.trades, ctx.as_of_date)?;
-    let outcome = market_value::value_positions(&positions, &ctx, &data.market_data)?;
+    let positions = aggregation::aggregate_positions(&inputs.trades, ctx.as_of_date)?;
+    let outcome = market_value::value_positions(&positions, &ctx, &*inputs.market_data)?;
     // TODO: surface outcome.warnings in response headers or a wrapper
     Ok(Json(outcome.value))
 }
@@ -74,18 +74,21 @@ pub async fn portfolio_report(
     let user_id = UserId::new(user_id);
 
     // Portfolio report needs price history going back ~400 days for value changes
-    let date_range = DateRange {
-        from: params.as_of_date - chrono::Days::new(400),
-        to: params.as_of_date,
+    let spec = CalcInputSpec {
+        subjects: vec![user_id],
+        base_currency,
+        date_range: DateRange {
+            from: params.as_of_date - chrono::Days::new(400),
+            to: params.as_of_date,
+        },
     };
-    // DataLoader enforces access check via SecurityContext
-    let data = state
-        .loader
-        .load_user_portfolio(&security_ctx, &user_id, base_currency, &date_range)
-        .await?;
+    let inputs = state.loader.load_calc_inputs(&security_ctx, &spec).await?;
 
-    let outcome =
-        calce_core::reports::portfolio::portfolio_report(&data.trades, &ctx, &data.market_data)?;
+    let outcome = calce_core::reports::portfolio::portfolio_report(
+        &inputs.trades,
+        &ctx,
+        &*inputs.market_data,
+    )?;
     // TODO: surface outcome.warnings in response headers or a wrapper
     Ok(Json(outcome.value))
 }

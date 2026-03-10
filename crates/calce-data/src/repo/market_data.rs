@@ -8,7 +8,15 @@ use calce_core::domain::fx_rate::FxRate;
 use calce_core::domain::instrument::InstrumentId;
 use calce_core::domain::price::Price;
 
-use crate::error::DataResult;
+use crate::error::{DataError, DataResult};
+
+fn parse_currency(column: &str, value: String) -> DataResult<Currency> {
+    Currency::try_new(&value).map_err(|_| DataError::InvalidDbData {
+        column: column.into(),
+        value,
+        reason: "not a valid 3-letter uppercase currency code".into(),
+    })
+}
 
 pub struct MarketDataRepo {
     pool: PgPool,
@@ -140,8 +148,8 @@ impl MarketDataRepo {
         .await?;
 
         for (from_str, to_str, rate) in rows {
-            let from = Currency::new(&from_str);
-            let to = Currency::new(&to_str);
+            let from = parse_currency("from_currency", from_str)?;
+            let to = parse_currency("to_currency", to_str)?;
             result.insert((from, to), FxRate::new(from, to, rate));
         }
 
@@ -172,6 +180,77 @@ impl MarketDataRepo {
             .into_iter()
             .map(|(d, r)| (d, FxRate::new(from_ccy, to_ccy, r)))
             .collect())
+    }
+
+    pub async fn get_price_history_batch(
+        &self,
+        instruments: &[InstrumentId],
+        from: NaiveDate,
+        to: NaiveDate,
+    ) -> DataResult<HashMap<InstrumentId, Vec<(NaiveDate, Price)>>> {
+        if instruments.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let ids: Vec<&str> = instruments.iter().map(InstrumentId::as_str).collect();
+        let rows = sqlx::query_as::<_, (String, NaiveDate, f64)>(
+            "SELECT instrument_id, price_date, price FROM prices \
+             WHERE instrument_id = ANY($1) AND price_date >= $2 AND price_date <= $3 \
+             ORDER BY instrument_id, price_date",
+        )
+        .bind(&ids)
+        .bind(from)
+        .bind(to)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut result: HashMap<InstrumentId, Vec<(NaiveDate, Price)>> = HashMap::new();
+        for (id, date, price) in rows {
+            result
+                .entry(InstrumentId::new(id))
+                .or_default()
+                .push((date, Price::new(price)));
+        }
+        Ok(result)
+    }
+
+    pub async fn get_fx_rate_history_batch(
+        &self,
+        pairs: &[(Currency, Currency)],
+        from: NaiveDate,
+        to: NaiveDate,
+    ) -> DataResult<Vec<(NaiveDate, FxRate)>> {
+        if pairs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let non_identity: Vec<_> = pairs.iter().filter(|(f, t)| f != t).collect();
+        if non_identity.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let froms: Vec<&str> = non_identity.iter().map(|(f, _)| f.as_str()).collect();
+        let tos: Vec<&str> = non_identity.iter().map(|(_, t)| t.as_str()).collect();
+
+        let rows = sqlx::query_as::<_, (String, String, NaiveDate, f64)>(
+            "SELECT from_currency, to_currency, rate_date, rate FROM fx_rates \
+             WHERE (from_currency, to_currency) IN (SELECT * FROM unnest($1::text[], $2::text[])) \
+             AND rate_date >= $3 AND rate_date <= $4 \
+             ORDER BY rate_date",
+        )
+        .bind(&froms)
+        .bind(&tos)
+        .bind(from)
+        .bind(to)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut result = Vec::with_capacity(rows.len());
+        for (from_str, to_str, date, rate) in rows {
+            let from_ccy = parse_currency("from_currency", from_str)?;
+            let to_ccy = parse_currency("to_currency", to_str)?;
+            result.push((date, FxRate::new(from_ccy, to_ccy, rate)));
+        }
+        Ok(result)
     }
 
     pub async fn list_instruments(&self) -> DataResult<Vec<(String, String, Option<String>)>> {

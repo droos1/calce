@@ -9,7 +9,7 @@ use calce_core::domain::quantity::Quantity;
 use calce_core::domain::trade::Trade;
 use calce_core::domain::user::UserId;
 
-use crate::error::DataResult;
+use crate::error::{DataError, DataResult};
 
 pub struct UserDataRepo {
     pool: PgPool,
@@ -29,7 +29,9 @@ impl UserDataRepo {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.into_iter().map(TradeRow::into_domain).collect())
+        rows.into_iter()
+            .map(TradeRow::try_into_domain)
+            .collect::<DataResult<Vec<_>>>()
     }
 
     pub async fn insert_user(&self, id: &UserId, email: Option<&str>) -> DataResult<()> {
@@ -123,15 +125,20 @@ struct TradeRow {
 }
 
 impl TradeRow {
-    fn into_domain(self) -> Trade {
-        Trade {
+    fn try_into_domain(self) -> DataResult<Trade> {
+        let currency = Currency::try_new(&self.currency).map_err(|_| DataError::InvalidDbData {
+            column: "currency".into(),
+            value: self.currency.clone(),
+            reason: "not a valid 3-letter uppercase currency code".into(),
+        })?;
+        Ok(Trade {
             user_id: UserId::new(self.user_id),
             account_id: AccountId::new(self.account_id),
             instrument_id: InstrumentId::new(self.instrument_id),
             quantity: Quantity::new(self.quantity),
             price: Price::new(self.price),
-            currency: Currency::new(&self.currency),
+            currency,
             date: self.trade_date,
-        }
+        })
     }
 }

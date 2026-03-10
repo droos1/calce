@@ -3,15 +3,11 @@ use chrono::NaiveDate;
 use crate::domain::currency::Currency;
 use crate::domain::instrument::InstrumentId;
 use crate::domain::money::CurrencyMismatch;
-use crate::domain::user::UserId;
 
 pub type CalceResult<T> = Result<T, CalceError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CalceError {
-    #[error("Unauthorized: user {requester} cannot access data for user {target}")]
-    Unauthorized { requester: UserId, target: UserId },
-
     #[error("Price not found for {instrument} on {date}")]
     PriceNotFound {
         instrument: InstrumentId,
@@ -24,9 +20,6 @@ pub enum CalceError {
         to: Currency,
         date: NaiveDate,
     },
-
-    #[error("No trades found for user {0}")]
-    NoTradesFound(UserId),
 
     #[error("Insufficient data for {instrument}: {reason}")]
     InsufficientData {
@@ -42,12 +35,5 @@ pub enum CalceError {
         instrument: InstrumentId,
         expected: Currency,
         actual: Currency,
-    },
-
-    #[error("Data error: {message}")]
-    DataError {
-        message: String,
-        /// The underlying error source (e.g. database error), preserved for logging.
-        source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
 }

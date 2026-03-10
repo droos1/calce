@@ -1,10 +1,9 @@
 //! Access control checks.
 //!
 //! Centralizes all "can user X do Y" decisions in one reviewable module.
-//! Both the API edge and the data layer should call these functions.
 
 use crate::auth::{Role, SecurityContext};
-use crate::domain::user::UserId;
+use calce_core::domain::user::UserId;
 
 /// Can the authenticated user access the target user's data?
 ///

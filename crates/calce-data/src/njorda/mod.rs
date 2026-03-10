@@ -224,3 +224,217 @@ pub fn print_summary(cached: &CachedMarketData) {
     println!("  Price points: {}", m.price_count);
     println!("  FX rate points: {}", m.fx_rate_count);
 }
+
+#[cfg(test)]
+mod build_service_tests {
+    use super::*;
+    use calce_core::domain::instrument::InstrumentId;
+    use calce_core::services::market_data::MarketDataService;
+    use types::{CachedFxRate, CachedPrice};
+
+    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).expect("valid test date")
+    }
+
+    fn empty_cached(from: NaiveDate, to: NaiveDate) -> CachedMarketData {
+        CachedMarketData {
+            metadata: CacheMetadata {
+                fetched_at: chrono::Utc::now(),
+                date_from: from,
+                date_to: to,
+                price_count: 0,
+                fx_rate_count: 0,
+                instrument_count: 0,
+            },
+            prices: vec![],
+            fx_rates: vec![],
+            instruments: vec![],
+        }
+    }
+
+    #[test]
+    fn empty_data_builds_successfully() {
+        let cached = empty_cached(date(2025, 1, 1), date(2025, 1, 10));
+        let svc = build_service(&cached).unwrap();
+        assert_eq!(svc.instrument_count(), 0);
+    }
+
+    #[test]
+    fn prices_are_queryable() {
+        let mut cached = empty_cached(date(2025, 1, 6), date(2025, 1, 10));
+        cached.prices.push(CachedPrice {
+            ticker: "AAPL".into(),
+            date: date(2025, 1, 6),
+            close: 150.0,
+        });
+        cached.prices.push(CachedPrice {
+            ticker: "AAPL".into(),
+            date: date(2025, 1, 8),
+            close: 155.0,
+        });
+
+        let svc = build_service(&cached).unwrap();
+        let p = svc
+            .get_price(&InstrumentId::new("AAPL"), date(2025, 1, 6))
+            .unwrap();
+        assert_eq!(p.value(), 150.0);
+        let p = svc
+            .get_price(&InstrumentId::new("AAPL"), date(2025, 1, 8))
+            .unwrap();
+        assert_eq!(p.value(), 155.0);
+    }
+
+    #[test]
+    fn forward_fill_covers_gaps() {
+        // Mon=6, Tue=7, Wed=8, Thu=9, Fri=10
+        let mut cached = empty_cached(date(2025, 1, 6), date(2025, 1, 10));
+        cached.prices.push(CachedPrice {
+            ticker: "AAPL".into(),
+            date: date(2025, 1, 6), // Monday
+            close: 150.0,
+        });
+        // Gap on Tue and Wed — should forward-fill from Monday's price
+
+        let svc = build_service(&cached).unwrap();
+        let p = svc
+            .get_price(&InstrumentId::new("AAPL"), date(2025, 1, 7))
+            .unwrap();
+        assert_eq!(p.value(), 150.0);
+        let p = svc
+            .get_price(&InstrumentId::new("AAPL"), date(2025, 1, 8))
+            .unwrap();
+        assert_eq!(p.value(), 150.0);
+    }
+
+    #[test]
+    fn no_backfill_before_first_price() {
+        // Data starts on Wed, so Mon and Tue should have no price
+        let mut cached = empty_cached(date(2025, 1, 6), date(2025, 1, 10));
+        cached.prices.push(CachedPrice {
+            ticker: "AAPL".into(),
+            date: date(2025, 1, 8), // Wednesday
+            close: 155.0,
+        });
+
+        let svc = build_service(&cached).unwrap();
+        // Monday before any price — should be NaN → PriceNotFound
+        assert!(
+            svc.get_price(&InstrumentId::new("AAPL"), date(2025, 1, 6))
+                .is_err()
+        );
+        // Wednesday has the actual price
+        let p = svc
+            .get_price(&InstrumentId::new("AAPL"), date(2025, 1, 8))
+            .unwrap();
+        assert_eq!(p.value(), 155.0);
+    }
+
+    #[test]
+    fn fx_rates_direct_and_forward_fill() {
+        let mut cached = empty_cached(date(2025, 1, 6), date(2025, 1, 10));
+        cached.fx_rates.push(CachedFxRate {
+            from: "USD".into(),
+            to: "SEK".into(),
+            date: date(2025, 1, 6),
+            rate: 10.5,
+        });
+
+        let svc = build_service(&cached).unwrap();
+        let usd = Currency::new("USD");
+        let sek = Currency::new("SEK");
+
+        // Direct lookup
+        let rate = svc.get_fx_rate(usd, sek, date(2025, 1, 6)).unwrap();
+        assert!((rate.rate - 10.5).abs() < f64::EPSILON);
+
+        // Forward-filled
+        let rate = svc.get_fx_rate(usd, sek, date(2025, 1, 8)).unwrap();
+        assert!((rate.rate - 10.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn fx_inverse_generated_when_missing() {
+        // Only USD→SEK provided, not SEK→USD
+        let mut cached = empty_cached(date(2025, 1, 6), date(2025, 1, 6));
+        cached.fx_rates.push(CachedFxRate {
+            from: "USD".into(),
+            to: "SEK".into(),
+            date: date(2025, 1, 6),
+            rate: 10.0,
+        });
+
+        let svc = build_service(&cached).unwrap();
+        let usd = Currency::new("USD");
+        let sek = Currency::new("SEK");
+
+        // Inverse should be auto-generated
+        let rate = svc.get_fx_rate(sek, usd, date(2025, 1, 6)).unwrap();
+        assert!((rate.rate - 0.1).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn fx_inverse_not_generated_when_both_directions_exist() {
+        let mut cached = empty_cached(date(2025, 1, 6), date(2025, 1, 6));
+        cached.fx_rates.push(CachedFxRate {
+            from: "USD".into(),
+            to: "SEK".into(),
+            date: date(2025, 1, 6),
+            rate: 10.0,
+        });
+        cached.fx_rates.push(CachedFxRate {
+            from: "SEK".into(),
+            to: "USD".into(),
+            date: date(2025, 1, 6),
+            rate: 0.095, // Slightly different from 1/10
+        });
+
+        let svc = build_service(&cached).unwrap();
+        let usd = Currency::new("USD");
+        let sek = Currency::new("SEK");
+
+        // Should use the explicit rate, not the computed inverse
+        let rate = svc.get_fx_rate(sek, usd, date(2025, 1, 6)).unwrap();
+        assert!((rate.rate - 0.095).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn invalid_currency_in_fx_returns_error() {
+        let mut cached = empty_cached(date(2025, 1, 6), date(2025, 1, 6));
+        cached.fx_rates.push(CachedFxRate {
+            from: "bad".into(), // lowercase — invalid
+            to: "SEK".into(),
+            date: date(2025, 1, 6),
+            rate: 1.0,
+        });
+
+        let result = build_service(&cached);
+        assert!(matches!(result, Err(NjordaError::InvalidCurrency(_))));
+    }
+
+    #[test]
+    fn multiple_instruments() {
+        let mut cached = empty_cached(date(2025, 1, 6), date(2025, 1, 7));
+        cached.prices.push(CachedPrice {
+            ticker: "AAPL".into(),
+            date: date(2025, 1, 6),
+            close: 150.0,
+        });
+        cached.prices.push(CachedPrice {
+            ticker: "MSFT".into(),
+            date: date(2025, 1, 6),
+            close: 400.0,
+        });
+
+        let svc = build_service(&cached).unwrap();
+        assert_eq!(svc.instrument_count(), 2);
+
+        let p = svc
+            .get_price(&InstrumentId::new("AAPL"), date(2025, 1, 6))
+            .unwrap();
+        assert_eq!(p.value(), 150.0);
+        let p = svc
+            .get_price(&InstrumentId::new("MSFT"), date(2025, 1, 6))
+            .unwrap();
+        assert_eq!(p.value(), 400.0);
+    }
+}

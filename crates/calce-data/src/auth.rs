@@ -1,4 +1,5 @@
-use crate::domain::user::UserId;
+use calce_core::domain::user::UserId;
+
 use crate::permissions;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

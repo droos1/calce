@@ -21,13 +21,14 @@ need both.
 
 ## User Model
 
-Every authenticated request produces a `SecurityContext` containing:
+Every authenticated request produces a `SecurityContext` (defined in `calce-data::auth`) containing:
 
 - **user_id** — the authenticated user
 - **role** — currently `User` or `Admin`
 
-The `SecurityContext` is passed through `CalcEngine` and into service calls
-so that data access checks happen close to the data, not just at the HTTP edge.
+The `SecurityContext` is passed to `DataLoader` which enforces access checks
+in the data layer before loading any user data. calce-core has no auth types —
+it is a pure calculation engine.
 
 ### Access Rules (User-Scoped)
 
@@ -49,8 +50,10 @@ Header-based (placeholder for real auth):
 - `X-User-Id` — required on user-scoped routes, maps to `UserId`
 - `X-Role` — optional, defaults to `User`
 
-Extracted in `calce-api/src/auth.rs` as an Axum `FromRequestParts` extractor.
-Missing `X-User-Id` on a user-scoped route returns 401.
+Extracted in `calce-api/src/auth.rs` as an Axum `FromRequestParts` extractor
+using types from `calce-data::auth`. Missing `X-User-Id` on a user-scoped route
+returns 401. Access checks are enforced by `DataLoader.load_calc_inputs()` using
+`calce-data::permissions::can_access_user_data()`.
 
 ## What's Coming
 

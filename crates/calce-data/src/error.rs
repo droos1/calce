@@ -1,9 +1,16 @@
+use calce_core::domain::user::UserId;
 use calce_core::error::CalceError;
 
 pub type DataResult<T> = Result<T, DataError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DataError {
+    #[error("Unauthorized: user {requester} cannot access data for user {target}")]
+    Unauthorized { requester: UserId, target: UserId },
+
+    #[error("No trades found for user {0}")]
+    NoTradesFound(UserId),
+
     #[error("Database error: {0}")]
     Sqlx(#[from] sqlx::Error),
 
@@ -11,21 +18,12 @@ pub enum DataError {
     Migration(#[from] sqlx::migrate::MigrateError),
 
     #[error("{0}")]
-    Core(#[from] CalceError),
-}
+    Calc(#[from] CalceError),
 
-impl From<DataError> for CalceError {
-    fn from(err: DataError) -> Self {
-        match err {
-            DataError::Core(e) => e,
-            DataError::Sqlx(e) => CalceError::DataError {
-                message: e.to_string(),
-                source: Some(Box::new(e)),
-            },
-            DataError::Migration(e) => CalceError::DataError {
-                message: e.to_string(),
-                source: Some(Box::new(e)),
-            },
-        }
-    }
+    #[error("Invalid data from DB: column {column}, value {value}: {reason}")]
+    InvalidDbData {
+        column: String,
+        value: String,
+        reason: String,
+    },
 }

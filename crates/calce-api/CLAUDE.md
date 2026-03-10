@@ -45,20 +45,23 @@ Missing `X-User-Id` on any authenticated route → 401 Unauthorized.
 
 ## Error Handling
 
-All `CalceError` variants must be mapped in `error.rs`. Current mapping:
+`error.rs` maps both `DataError` (from calce-data) and `CalceError` (from calce-core) to HTTP responses.
 
-| CalceError variant  | HTTP status | Notes |
-|---------------------|-------------|-------|
-| Unauthorized        | 403         | User lacks access to target user's data |
-| NoTradesFound       | 404         | |
-| CurrencyMismatch    | 400         | Client sent conflicting currencies |
-| InsufficientData    | 422         | Not enough price history for calculation |
-| PriceNotFound       | 422         | Missing market data — not a server bug |
-| FxRateNotFound      | 422         | Missing market data — not a server bug |
+| Error variant               | HTTP status | Notes |
+|-----------------------------|-------------|-------|
+| `DataError::Unauthorized`   | 403         | User lacks access to target user's data |
+| `DataError::NoTradesFound`  | 404         | |
+| `DataError::Sqlx`           | 500         | Database error |
+| `DataError::InvalidDbData`  | 500         | Corrupt data in DB |
+| `DataError::Calc(inner)`    | delegates   | Maps the inner `CalceError` |
+| `CalceError::CurrencyMismatch` | 400      | Client sent conflicting currencies |
+| `CalceError::PriceNotFound` | 422         | Missing market data — not a server bug |
+| `CalceError::FxRateNotFound` | 422        | Missing market data — not a server bug |
+| `CalceError::InsufficientData` | 422      | Not enough price history for calculation |
+| `CalceError::CurrencyConflict` | 422      | Instrument currency mismatch |
 
 **Important:** 500 should only occur for genuine server bugs (panics, DB connection
-failures), never for missing data or bad input. If a `CalceError` maps to 500,
-that's a sign the mapping needs fixing.
+failures), never for missing data or bad input.
 
 Response format:
 ```json

@@ -107,16 +107,3 @@ class TestPortfolioReport:
         assert report.value_changes.daily.change_pct is not None
         assert report.value_changes.yearly.change_pct is not None
 
-    def test_admin_role(self):
-        usd = calce.Currency("USD")
-        d = date(2025, 1, 15)
-
-        md = calce.MarketData()
-        md.add_price("AAPL", d, 150.0)
-
-        ud = calce.UserData()
-        ud.add_trade(calce.Trade("alice", "acct", "AAPL", 100.0, 145.0, usd, d))
-
-        engine = calce.CalcEngine(usd, d, "alice", md, ud, role="admin")
-        result = engine.market_value()
-        assert result.total.amount == 15_000.0

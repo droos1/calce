@@ -11,8 +11,8 @@ Core Rust library — no DB or async dependencies. Fast to compile, easy to test
 | `accounting/` | Exact-precision ledger arithmetic (Decimal) |
 | `reports/` | Composed views bundling multiple calc primitives |
 | `services/` | Service traits + in-memory test implementations |
+| `inputs.rs` | `CalcInputs` — trades + market data bundle for calculations |
 | `outcome.rs` | `Outcome<T>` — partial results with warnings |
-| `permissions.rs` | Centralized access-control checks |
 
 ## Numeric Types
 
@@ -39,8 +39,6 @@ An **Account** groups trades under a user with its own currency and label. Accou
 ## Contexts
 
 **`CalculationContext`** — pure parameters (`base_currency`, `as_of_date`). No service references, no state. Passed into every calc function.
-
-**`SecurityContext`** — user identity + role. Used by the stateful path only. The stateless path has no concept of authorization.
 
 ## Lint Config
 
