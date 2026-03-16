@@ -35,7 +35,7 @@ GET /v1/instruments/{instrument_id}/volatility?as_of_date=...&lookback_days=...
 ```
 
 When adding a new endpoint, decide which scope it belongs to:
-- If it needs user trades/positions → user-scoped, pass SecurityContext to DataLoader, call calc functions
+- If it needs user trades/positions → user-scoped, pass SecurityContext to DataService, call calc functions
 - If it only needs market data → instrument-scoped, auth only, call calc function directly
 
 ## Authentication

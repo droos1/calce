@@ -33,7 +33,7 @@ calce-api
 
 The `InMemory*Service` types in `services/` serve two roles:
 
-1. **Sync bridge** — `DataLoader` in calce-data loads data async from Postgres, packs it into `InMemoryMarketDataService`, then hands it to sync calce-core calc functions. This is the core async/sync bridging pattern.
+1. **Sync bridge** — `DataService` in calce-data loads data async from Postgres, packs it into `InMemoryMarketDataService`, then hands it to sync calce-core calc functions. This is the core async/sync bridging pattern.
 2. **Test doubles** — unit tests construct them directly with known data.
 
 Because of role 1, these types are always available (not gated behind `#[cfg(test)]`). They are lightweight data holders with no database dependencies.

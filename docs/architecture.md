@@ -27,7 +27,7 @@ calce-python  (PyO3 bindings, depends on calce-core only — caller provides all
 The central architectural pattern. calce-core defines sync service traits (`MarketDataService`) with in-memory implementations. calce-data bridges the gap:
 
 ```
-API handler → DataLoader.load_calc_inputs(security_ctx, spec)
+API handler → DataService.load_calc_inputs(security_ctx, spec)
   1. Authorize access to all subjects      (sync, calce-data auth)
   2. Load trades from backend              (async)
   3. Batch-load prices + FX for positions  (async, avoids N+1)
@@ -41,7 +41,7 @@ Data is loaded async in bulk, packed into in-memory structs, then handed to pure
 
 ## Dual API
 
-**Stateful** — caller identifies _what_ to calculate (which user). `DataLoader` in calce-data loads data and packs it into in-memory services, then the API handler calls pure calc functions. Used by the HTTP API.
+**Stateful** — caller identifies _what_ to calculate (which user). `DataService` in calce-data loads data and packs it into in-memory services, then the API handler calls pure calc functions. Used by the HTTP API.
 
 **Caller-provided** — caller constructs all input data (trades, market data) and passes it directly. No database access, no auth. The PyO3 `CalcEngine` still indexes trades by `user_id` into caller-provided `UserData`, but all data originates from the caller. Used for simulations, what-if analysis, testing, and as an embeddable library (PyO3).
 
@@ -55,7 +55,7 @@ Calculations compose in layers:
 2. **Composite** — calls primitives at multiple points: `value_change_summary` calls `aggregate_positions` + `value_positions` for each comparison date, then diffs
 3. **Report** (`reports/`) — bundles composites into a consumer-facing result, sharing intermediate values to avoid redundant computation
 
-Data loading is separate from calculations: `DataLoader` in calce-data handles async I/O, then the API handler or caller invokes the pure calc layer.
+Data loading is separate from calculations: `DataService` in calce-data handles async I/O, then the API handler or caller invokes the pure calc layer.
 
 Each level is independently testable. The pure-function design means caching/memoization can be added later by wrapping the same functions.
 

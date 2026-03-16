@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::routing::get;
-use calce_data::backend::PostgresBackend;
-use calce_data::loader::DataLoader;
-use calce_data::repo::market_data::MarketDataRepo;
-use calce_data::repo::user_data::UserDataRepo;
+use calce_data::service::DataService;
 use sqlx::PgPool;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
@@ -31,7 +28,7 @@ fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-async fn create_postgres_loader() -> (DataLoader, PgPool) {
+async fn create_postgres_service() -> (DataService, PgPool) {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://calce:calce@localhost:5433/calce".into());
 
@@ -45,18 +42,18 @@ async fn create_postgres_loader() -> (DataLoader, PgPool) {
         .expect("failed to run migrations");
 
     tracing::info!("Backend: postgres ({database_url})");
-    let backend = PostgresBackend::new(
-        MarketDataRepo::new(pool.clone()),
-        UserDataRepo::new(pool.clone()),
-    );
-    (DataLoader::new(backend), pool)
+    let service = DataService::from_postgres(&pool)
+        .await
+        .expect("failed to bulk-load data");
+    (service, pool)
 }
 
 #[cfg(feature = "njorda")]
-fn create_njorda_cache_loader() -> DataLoader {
+fn create_njorda_cache_service() -> DataService {
     use std::time::Instant;
 
-    use calce_integrations::njorda::{self, NjordaBackend, cache};
+    use calce_core::services::user_data::InMemoryUserDataService;
+    use calce_integrations::njorda::{self, cache};
 
     let cache_path = cache::cache_path();
     let service_path = cache::service_cache_path();
@@ -76,7 +73,7 @@ fn create_njorda_cache_loader() -> DataLoader {
                     market_data.fx_rate_count(),
                     mem_mb,
                 );
-                return DataLoader::new(NjordaBackend::new(market_data));
+                return DataService::from_memory(market_data, InMemoryUserDataService::new());
             }
             Err(e) => {
                 tracing::warn!("Service cache invalid, rebuilding: {e}");
@@ -136,11 +133,11 @@ fn create_njorda_cache_loader() -> DataLoader {
         cached.metadata.fetched_at.format("%Y-%m-%d %H:%M UTC"),
     );
 
-    DataLoader::new(NjordaBackend::new(market_data))
+    DataService::from_memory(market_data, InMemoryUserDataService::new())
 }
 
 #[cfg(not(feature = "njorda"))]
-fn create_njorda_cache_loader() -> DataLoader {
+fn create_njorda_cache_service() -> DataService {
     eprintln!("Error: njorda-cache backend requires the 'njorda' feature.");
     eprintln!("Build with: cargo run -p calce-api --features njorda");
     eprintln!("Or use: invoke run-api --njorda");
@@ -155,12 +152,12 @@ async fn main() {
 
     let backend = std::env::var("CALCE_BACKEND").unwrap_or_else(|_| "postgres".into());
 
-    let (loader, pool) = match backend.as_str() {
+    let (data, pool) = match backend.as_str() {
         "postgres" => {
-            let (loader, pool) = create_postgres_loader().await;
-            (loader, Some(pool))
+            let (data, pool) = create_postgres_service().await;
+            (data, Some(pool))
         }
-        "njorda-cache" => (create_njorda_cache_loader(), None),
+        "njorda-cache" => (create_njorda_cache_service(), None),
         other => {
             eprintln!("Unknown CALCE_BACKEND: {other}");
             eprintln!("Options: postgres (default), njorda-cache");
@@ -169,7 +166,7 @@ async fn main() {
     };
 
     let state = AppState {
-        loader: Arc::new(loader),
+        data: Arc::new(data),
         pool,
     };
 
@@ -195,13 +192,9 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_state() -> AppState {
-        let backend = calce_data::backend::InMemoryBackend::new(
-            seed::seed_market_data(),
-            seed::seed_user_data(),
-        );
-        let loader = DataLoader::new(backend);
+        let data = DataService::from_memory(seed::seed_market_data(), seed::seed_user_data());
         AppState {
-            loader: Arc::new(loader),
+            data: Arc::new(data),
             pool: None,
         }
     }

@@ -26,7 +26,7 @@ Every authenticated request produces a `SecurityContext` (defined in `calce-data
 - **user_id** — the authenticated user
 - **role** — currently `User` or `Admin`
 
-The `SecurityContext` is passed to `DataLoader` which enforces access checks
+The `SecurityContext` is passed to `DataService` which enforces access checks
 in the data layer before loading any user data. calce-core has no auth types —
 it is a pure calculation engine.
 
@@ -52,7 +52,7 @@ Header-based (placeholder for real auth):
 
 Extracted in `calce-api/src/auth.rs` as an Axum `FromRequestParts` extractor
 using types from `calce-data::auth`. Missing `X-User-Id` on a user-scoped route
-returns 401. Access checks are enforced by `DataLoader.load_calc_inputs()` using
+returns 401. Access checks are enforced by `DataService.load_calc_inputs()` using
 `calce-data::permissions::can_access_user_data()`.
 
 ## What's Coming

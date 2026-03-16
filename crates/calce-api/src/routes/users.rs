@@ -3,7 +3,7 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
 use calce_data::error::DataError;
-use calce_data::repo::user_data::{User, UserDataRepo};
+use calce_data::queries::user_data::{User, UserDataRepo};
 use serde::Deserialize;
 
 use crate::auth::{self, Auth};

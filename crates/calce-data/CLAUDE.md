@@ -9,22 +9,22 @@ trades and market data from different sources.
 |--------|---------|
 | `auth.rs` | `SecurityContext`, `Role` — user identity and role types |
 | `permissions.rs` | `can_access_user_data()` — centralized access-control checks |
-| `backend/mod.rs` | `DataBackend` trait — read-only interface used by `DataLoader` |
-| `backend/postgres.rs` | Postgres backend — orchestrates repo queries into `DataBackend` |
+| `backend/mod.rs` | `DataBackend` trait — read-only interface used by `DataService` |
+| `backend/postgres.rs` | Postgres backend — orchestrates queries into `DataBackend` |
 | `backend/in_memory.rs` | In-memory backend for tests |
-| `repo/market_data.rs` | Postgres query layer: prices, FX rates (reads + writes) |
-| `repo/user_data.rs` | Postgres query layer: users, accounts, trades (reads + writes) |
-| `loader.rs` | `DataLoader` — wraps a `DataBackend`, adds auth checks and input assembly |
+| `queries/market_data.rs` | Postgres query layer: prices, FX rates (reads + writes) |
+| `queries/user_data.rs` | Postgres query layer: users, accounts, trades (reads + writes) |
+| `service.rs` | `DataService` — wraps a `DataBackend`, adds auth checks and input assembly |
 | `config.rs` | Database connection configuration |
 
 ### Layer overview
 
 ```
-DataLoader  →  DataBackend (trait)  →  PostgresBackend  →  repo/ (SQL queries)
+DataService  →  DataBackend (trait)  →  PostgresBackend  →  queries/ (SQL)
                                     →  InMemoryBackend
 ```
 
-`repo/` is Postgres-specific and includes write methods (inserts) not exposed
+`queries/` is Postgres-specific and includes write methods (inserts) not exposed
 through `DataBackend`. It is only used by `PostgresBackend`.
 
 ## Database

@@ -15,7 +15,8 @@ class TestExceptionHierarchy:
 
 
 class TestMissingPrice:
-    def test_missing_price_raises(self):
+    def test_missing_price_returns_zero_value(self):
+        """Missing prices produce warnings, not errors — result has zero total."""
         usd = calce.Currency("USD")
         d = date(2025, 1, 15)
 
@@ -26,26 +27,8 @@ class TestMissingPrice:
         ud.add_trade(calce.Trade("alice", "acct", "AAPL", 100.0, 145.0, usd, d))
 
         engine = calce.CalcEngine(usd, d, "alice", md, ud)
-        try:
-            engine.market_value()
-            assert False, "Should have raised PriceNotFoundError"
-        except calce.PriceNotFoundError as e:
-            assert "AAPL" in str(e)
-
-    def test_missing_price_caught_as_calce_error(self):
-        usd = calce.Currency("USD")
-        d = date(2025, 1, 15)
-
-        md = calce.MarketData()
-        ud = calce.UserData()
-        ud.add_trade(calce.Trade("alice", "acct", "AAPL", 100.0, 145.0, usd, d))
-
-        engine = calce.CalcEngine(usd, d, "alice", md, ud)
-        try:
-            engine.market_value()
-            assert False, "Should have raised"
-        except calce.CalceError:
-            pass  # Caught via base class
+        result = engine.market_value()
+        assert result.total.amount == 0.0
 
 
 class TestNoTradesFound:

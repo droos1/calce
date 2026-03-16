@@ -2,9 +2,6 @@ pub mod cache;
 pub mod repo;
 pub mod types;
 
-mod backend;
-pub use backend::NjordaBackend;
-
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::{Datelike, NaiveDate};

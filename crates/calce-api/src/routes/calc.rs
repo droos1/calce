@@ -10,7 +10,7 @@ use calce_core::domain::currency::Currency;
 use calce_core::domain::instrument::InstrumentId;
 use calce_core::domain::user::UserId;
 use calce_core::reports::portfolio::PortfolioReport;
-use calce_data::loader::{CalcInputSpec, DataStats, DateRange, InstrumentSummary, UserSummary};
+use calce_data::service::{CalcInputSpec, DataStats, DateRange, InstrumentSummary, UserSummary};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
@@ -74,7 +74,7 @@ async fn market_value(
             to: params.as_of_date,
         },
     };
-    let inputs = state.loader.load_calc_inputs(&security_ctx, &spec).await?;
+    let inputs = state.data.load_calc_inputs(&security_ctx, &spec).await?;
 
     let positions = aggregation::aggregate_positions(&inputs.trades, ctx.as_of_date)?;
     let outcome = market_value::value_positions(&positions, &ctx, &*inputs.market_data)?;
@@ -101,7 +101,7 @@ async fn portfolio_report(
             to: params.as_of_date,
         },
     };
-    let inputs = state.loader.load_calc_inputs(&security_ctx, &spec).await?;
+    let inputs = state.data.load_calc_inputs(&security_ctx, &spec).await?;
 
     let outcome = calce_core::reports::portfolio::portfolio_report(
         &inputs.trades,
@@ -119,50 +119,37 @@ async fn volatility(
     Query(params): Query<VolatilityParams>,
 ) -> Result<Json<VolatilityResult>, ApiError> {
     let instrument = InstrumentId::new(instrument_id);
-    let from = params.as_of_date - chrono::Days::new(u64::from(params.lookback_days));
-
-    let date_range = DateRange {
-        from,
-        to: params.as_of_date,
-    };
-    let result = state
-        .loader
-        .with_market_data(std::slice::from_ref(&instrument), &date_range, |md| {
-            volatility::calculate_volatility(
-                &instrument,
-                params.as_of_date,
-                params.lookback_days,
-                md,
-            )
-        })
-        .await?;
+    let md = state.data.load_market_data();
+    let result = volatility::calculate_volatility(
+        &instrument,
+        params.as_of_date,
+        params.lookback_days,
+        &*md,
+    )?;
     Ok(Json(result))
 }
 
-// ── Data exploration (no auth required — developer tool) ──────────────
+// ── Data exploration ──────────────────────────────────────────────────
 
 async fn data_stats(
     Auth(_ctx): Auth,
     State(state): State<AppState>,
 ) -> Result<Json<DataStats>, ApiError> {
-    let stats = state.loader.data_stats().await?;
-    Ok(Json(stats))
+    Ok(Json(state.data.data_stats()))
 }
 
 async fn data_users(
     Auth(ctx): Auth,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<UserSummary>>, ApiError> {
-    let users = state.loader.list_users(&ctx).await?;
-    Ok(Json(users))
+    Ok(Json(state.data.list_users(&ctx)))
 }
 
 async fn data_instruments(
     Auth(_ctx): Auth,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<InstrumentSummary>>, ApiError> {
-    let instruments = state.loader.list_instruments().await?;
-    Ok(Json(instruments))
+    Ok(Json(state.data.list_instruments()))
 }
 
 #[derive(Deserialize)]
@@ -185,9 +172,8 @@ async fn instrument_prices(
 ) -> Result<Json<Vec<PricePoint>>, ApiError> {
     let instrument = InstrumentId::new(instrument_id);
     let history = state
-        .loader
-        .price_history(&instrument, params.from, params.to)
-        .await?;
+        .data
+        .price_history(&instrument, params.from, params.to)?;
     let points: Vec<PricePoint> = history
         .into_iter()
         .map(|(date, price)| PricePoint { date, price })

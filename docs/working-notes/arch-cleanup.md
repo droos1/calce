@@ -13,11 +13,11 @@ Tracked items from the architecture review (2026-03-06).
 - [x] Updated calce-python bindings to call calc functions directly
 - [x] Updated CLAUDE.md, architecture.md, rust-guidelines.md references
 
-### 3. Auth: SecurityContext into DataLoader + permissions module
+### 3. Auth: SecurityContext into DataService + permissions module
 - [x] Created `calce-core/src/permissions.rs` with `can_access_user_data` function + tests
 - [x] `SecurityContext::can_access` now delegates to permissions module
-- [x] `DataLoader.load_trades` and `load_user_portfolio` require `SecurityContext` and enforce access checks
-- [x] Removed duplicate `check_access` from API routes — DataLoader handles it
+- [x] `DataService.load_trades` and `load_user_portfolio` require `SecurityContext` and enforce access checks
+- [x] Removed duplicate `check_access` from API routes — DataService handles it
 - [x] Updated architecture doc
 
 ### 4. Implement Outcome<T> partial results
@@ -51,4 +51,4 @@ Tracked items from the architecture review (2026-03-06).
 
 - Surface `Outcome.warnings` in API responses (response wrapper or header)
 - Surface warnings in Python bindings
-- DataLoader backend enum: consider a trait-based approach when adding njorda backend
+- DataService backend enum: consider a trait-based approach when adding njorda backend

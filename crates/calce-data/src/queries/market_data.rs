@@ -253,6 +253,35 @@ impl MarketDataRepo {
         Ok(result)
     }
 
+    pub async fn get_all_prices(&self) -> DataResult<Vec<(InstrumentId, NaiveDate, Price)>> {
+        let rows = sqlx::query_as::<_, (String, NaiveDate, f64)>(
+            "SELECT instrument_id, price_date, price FROM prices ORDER BY instrument_id, price_date",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(id, d, p)| (InstrumentId::new(id), d, Price::new(p)))
+            .collect())
+    }
+
+    pub async fn get_all_fx_rates(&self) -> DataResult<Vec<(NaiveDate, FxRate)>> {
+        let rows = sqlx::query_as::<_, (String, String, NaiveDate, f64)>(
+            "SELECT from_currency, to_currency, rate_date, rate FROM fx_rates ORDER BY rate_date",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter()
+            .map(|(from_str, to_str, date, rate)| {
+                let from = parse_currency("from_currency", from_str)?;
+                let to = parse_currency("to_currency", to_str)?;
+                Ok((date, FxRate::new(from, to, rate)))
+            })
+            .collect()
+    }
+
     pub async fn list_instruments(&self) -> DataResult<Vec<(String, String, Option<String>)>> {
         let rows = sqlx::query_as::<_, (String, String, Option<String>)>(
             "SELECT id, currency, name FROM instruments ORDER BY id",

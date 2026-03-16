@@ -6,7 +6,7 @@ use crate::services::market_data::InMemoryMarketDataService;
 
 /// Bundles trades with the market data needed to run calculations.
 ///
-/// Built by `DataLoader` in production or manually in tests.
+/// Built by `DataService` in production or manually in tests.
 /// Uses `Arc` so in-memory backends can share data without cloning.
 pub struct CalcInputs {
     pub trades: Vec<Trade>,

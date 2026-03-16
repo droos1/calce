@@ -43,6 +43,19 @@ impl UserDataRepo {
             .collect::<DataResult<Vec<_>>>()
     }
 
+    pub async fn get_all_trades(&self) -> DataResult<Vec<Trade>> {
+        let rows = sqlx::query_as::<_, TradeRow>(
+            "SELECT user_id, account_id, instrument_id, quantity, price, currency, trade_date \
+             FROM trades ORDER BY user_id, trade_date, id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter()
+            .map(TradeRow::try_into_domain)
+            .collect::<DataResult<Vec<_>>>()
+    }
+
     pub async fn upsert_user(&self, id: &UserId, email: Option<&str>) -> DataResult<()> {
         sqlx::query(
             "INSERT INTO users (id, email) VALUES ($1, $2) \

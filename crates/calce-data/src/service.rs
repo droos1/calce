@@ -1,18 +1,22 @@
+use std::sync::Arc;
+
 use serde::Serialize;
 
 use crate::auth::SecurityContext;
-use crate::backend::DataBackend;
 use crate::error::{DataError, DataResult};
 use crate::permissions;
+use crate::queries::market_data::MarketDataRepo;
+use crate::queries::user_data::UserDataRepo;
 
 use calce_core::domain::currency::Currency;
 use calce_core::domain::instrument::InstrumentId;
-use calce_core::domain::trade::Trade;
+use calce_core::domain::price::Price;
 use calce_core::domain::user::UserId;
-use calce_core::error::CalceResult;
 use calce_core::inputs::CalcInputs;
-use calce_core::services::market_data::MarketDataService;
+use calce_core::services::market_data::{InMemoryMarketDataService, MarketDataService};
+use calce_core::services::user_data::InMemoryUserDataService;
 use chrono::NaiveDate;
+use sqlx::PgPool;
 
 pub struct DateRange {
     pub from: NaiveDate,
@@ -25,14 +29,11 @@ pub struct CalcInputSpec {
     pub date_range: DateRange,
 }
 
-/// Generic async data loader.
-///
-/// Wraps a `DataBackend` implementation.
-///
-/// User-scoped methods require a `SecurityContext` and enforce access checks
-/// via [`permissions::can_access_user_data`] before loading any data.
-pub struct DataLoader {
-    backend: Box<dyn DataBackend>,
+pub struct DataService {
+    market_data: Arc<InMemoryMarketDataService>,
+    user_data: InMemoryUserDataService,
+    users: Vec<UserSummary>,
+    instruments: Vec<InstrumentSummary>,
 }
 
 fn check_user_access(security_ctx: &SecurityContext, user_id: &UserId) -> DataResult<()> {
@@ -45,23 +46,110 @@ fn check_user_access(security_ctx: &SecurityContext, user_id: &UserId) -> DataRe
     Ok(())
 }
 
-impl DataLoader {
-    pub fn new(backend: impl DataBackend + 'static) -> Self {
+impl DataService {
+    /// Bulk-load all data from Postgres into memory at startup.
+    ///
+    /// # Errors
+    ///
+    /// Propagates database errors.
+    pub async fn from_postgres(pool: &PgPool) -> DataResult<Self> {
+        let md_repo = MarketDataRepo::new(pool.clone());
+        let ud_repo = UserDataRepo::new(pool.clone());
+
+        let (users_raw, instruments_raw, trades, all_prices, all_fx_rates) = tokio::try_join!(
+            ud_repo.list_users_with_trade_counts(),
+            md_repo.list_instruments(),
+            ud_repo.get_all_trades(),
+            md_repo.get_all_prices(),
+            md_repo.get_all_fx_rates(),
+        )?;
+
+        let users: Vec<UserSummary> = users_raw
+            .into_iter()
+            .map(|(id, email, trade_count)| UserSummary {
+                id,
+                email,
+                trade_count,
+            })
+            .collect();
+
+        let instruments: Vec<InstrumentSummary> = instruments_raw
+            .into_iter()
+            .map(|(id, currency, name)| InstrumentSummary { id, currency, name })
+            .collect();
+
+        let mut md = InMemoryMarketDataService::new();
+        for (instrument, date, price) in all_prices {
+            md.add_price(&instrument, date, price);
+        }
+        for (date, rate) in all_fx_rates {
+            md.add_fx_rate(rate, date);
+        }
+        md.freeze();
+
+        let mut ud = InMemoryUserDataService::new();
+        for trade in trades {
+            ud.add_trade(trade);
+        }
+
+        tracing::info!(
+            "DataService loaded: {} users, {} instruments, {} prices, {} FX rates",
+            users.len(),
+            instruments.len(),
+            md.price_count(),
+            md.fx_rate_count(),
+        );
+
+        Ok(Self {
+            market_data: Arc::new(md),
+            user_data: ud,
+            users,
+            instruments,
+        })
+    }
+
+    /// Build from pre-loaded in-memory data (tests, njorda path).
+    pub fn from_memory(
+        market_data: InMemoryMarketDataService,
+        user_data: InMemoryUserDataService,
+    ) -> Self {
+        let users: Vec<UserSummary> = user_data
+            .user_ids()
+            .into_iter()
+            .map(|id| UserSummary {
+                id,
+                email: None,
+                trade_count: 0,
+            })
+            .collect();
+
+        let instruments: Vec<InstrumentSummary> = market_data
+            .instrument_ids()
+            .into_iter()
+            .map(|id| InstrumentSummary {
+                id: id.as_str().to_owned(),
+                currency: String::new(),
+                name: None,
+            })
+            .collect();
+
         Self {
-            backend: Box::new(backend),
+            market_data: Arc::new(market_data),
+            user_data,
+            users,
+            instruments,
         }
     }
 
     /// Load trades + all market data needed for calculations.
     ///
-    /// Authorizes access to all subjects, loads their trades, and assembles
-    /// the market data needed for the combined set.
+    /// Authorizes access to all subjects, loads their trades, and returns
+    /// the shared in-memory market data service.
     ///
     /// # Errors
     ///
     /// Returns `Unauthorized` if the security context lacks access to any subject.
     /// Returns `NoTradesFound` if a subject has no trades.
-    /// Propagates price/FX/database errors.
     pub async fn load_calc_inputs(
         &self,
         ctx: &SecurityContext,
@@ -72,58 +160,43 @@ impl DataLoader {
 
         for subject in &subjects {
             check_user_access(ctx, subject)?;
-            let trades = self.backend.load_trades(subject).await?;
+            let trades = self
+                .user_data
+                .trades_for(subject)
+                .ok_or_else(|| DataError::NoTradesFound(subject.clone()))?;
             all_trades.extend(trades);
         }
 
-        let instruments = unique_instruments(&all_trades);
-        let currencies = unique_currencies(&all_trades);
-
-        let market_data = self
-            .backend
-            .load_market_data(
-                &instruments,
-                &currencies,
-                spec.base_currency,
-                &spec.date_range,
-            )
-            .await?;
-
         Ok(CalcInputs {
             trades: all_trades,
-            market_data,
+            market_data: Arc::clone(&self.market_data),
         })
     }
 
     /// List users visible to the caller.
     ///
     /// Admins see all users. Regular users see only themselves.
-    ///
-    /// # Errors
-    ///
-    /// Propagates database errors.
-    pub async fn list_users(&self, ctx: &SecurityContext) -> DataResult<Vec<UserSummary>> {
-        let users = self.backend.list_users().await?;
+    pub fn list_users(&self, ctx: &SecurityContext) -> Vec<UserSummary> {
         if ctx.is_admin() {
-            Ok(users)
+            self.users.clone()
         } else {
             let id = ctx.user_id.as_str();
-            Ok(users.into_iter().filter(|u| u.id == id).collect())
+            self.users.iter().filter(|u| u.id == id).cloned().collect()
         }
     }
 
-    /// # Errors
-    ///
-    /// Propagates database errors.
-    pub async fn list_instruments(&self) -> DataResult<Vec<InstrumentSummary>> {
-        self.backend.list_instruments().await
+    pub fn list_instruments(&self) -> Vec<InstrumentSummary> {
+        self.instruments.clone()
     }
 
-    /// # Errors
-    ///
-    /// Propagates database errors.
-    pub async fn data_stats(&self) -> DataResult<DataStats> {
-        self.backend.data_stats().await
+    pub fn data_stats(&self) -> DataStats {
+        DataStats {
+            user_count: i64::try_from(self.users.len()).unwrap_or(0),
+            instrument_count: i64::try_from(self.instruments.len()).unwrap_or(0),
+            trade_count: 0,
+            price_count: i64::try_from(self.market_data.price_count()).unwrap_or(0),
+            fx_rate_count: i64::try_from(self.market_data.fx_rate_count()).unwrap_or(0),
+        }
     }
 
     /// Price history for a single instrument.
@@ -131,52 +204,30 @@ impl DataLoader {
     /// # Errors
     ///
     /// Returns `PriceNotFound` if no prices exist in the range.
-    /// Propagates database errors.
-    pub async fn price_history(
+    pub fn price_history(
         &self,
         instrument: &InstrumentId,
         from: NaiveDate,
         to: NaiveDate,
     ) -> DataResult<Vec<(NaiveDate, f64)>> {
-        self.backend.price_history(instrument, from, to).await
+        let history: Vec<(NaiveDate, Price)> =
+            self.market_data.get_price_history(instrument, from, to)?;
+        Ok(history.into_iter().map(|(d, p)| (d, p.value())).collect())
     }
 
-    /// Run a price-only calculation against market data.
-    ///
-    /// For in-memory backends (InMemory, Njorda) this borrows directly with
-    /// no clone. For Postgres it loads prices for the requested instruments
-    /// into a temporary service — no FX rates are loaded.
-    ///
-    /// # Errors
-    ///
-    /// Propagates price/database errors.
-    pub async fn with_market_data<T>(
-        &self,
-        instruments: &[InstrumentId],
-        date_range: &DateRange,
-        f: impl FnOnce(&dyn MarketDataService) -> CalceResult<T>,
-    ) -> DataResult<T> {
-        // Fast path: borrow directly from cached backends (no clone)
-        if let Some(md) = self.backend.cached_market_data() {
-            return f(md).map_err(DataError::from);
-        }
-        // Postgres path: load only prices for the requested instruments
-        let svc = self
-            .backend
-            .load_market_data(instruments, &[], Currency::new("USD"), date_range)
-            .await?;
-        f(&*svc).map_err(DataError::from)
+    pub fn load_market_data(&self) -> Arc<InMemoryMarketDataService> {
+        Arc::clone(&self.market_data)
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct UserSummary {
     pub id: String,
     pub email: Option<String>,
     pub trade_count: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct InstrumentSummary {
     pub id: String,
     pub currency: String,
@@ -202,21 +253,6 @@ fn dedup_subjects(subjects: &[UserId]) -> Vec<UserId> {
     seen
 }
 
-fn unique_instruments(trades: &[Trade]) -> Vec<InstrumentId> {
-    let mut instruments: Vec<InstrumentId> =
-        trades.iter().map(|t| t.instrument_id.clone()).collect();
-    instruments.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-    instruments.dedup_by(|a, b| a.as_str() == b.as_str());
-    instruments
-}
-
-fn unique_currencies(trades: &[Trade]) -> Vec<Currency> {
-    let mut currencies: Vec<Currency> = trades.iter().map(|t| t.currency).collect();
-    currencies.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-    currencies.dedup();
-    currencies
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,16 +261,28 @@ mod tests {
     use calce_core::domain::fx_rate::FxRate;
     use calce_core::domain::price::Price;
     use calce_core::domain::quantity::Quantity;
-    use calce_core::services::market_data::InMemoryMarketDataService;
-    use calce_core::services::user_data::InMemoryUserDataService;
+    use calce_core::domain::trade::Trade;
 
-    use crate::backend::InMemoryBackend;
+    fn unique_instruments(trades: &[Trade]) -> Vec<InstrumentId> {
+        let mut instruments: Vec<InstrumentId> =
+            trades.iter().map(|t| t.instrument_id.clone()).collect();
+        instruments.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        instruments.dedup_by(|a, b| a.as_str() == b.as_str());
+        instruments
+    }
+
+    fn unique_currencies(trades: &[Trade]) -> Vec<Currency> {
+        let mut currencies: Vec<Currency> = trades.iter().map(|t| t.currency).collect();
+        currencies.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        currencies.dedup();
+        currencies
+    }
 
     fn date(y: i32, m: u32, d: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, d).expect("valid test date")
     }
 
-    fn test_loader() -> DataLoader {
+    fn test_service() -> DataService {
         let usd = Currency::new("USD");
         let sek = Currency::new("SEK");
         let aapl = InstrumentId::new("AAPL");
@@ -255,7 +303,7 @@ mod tests {
             date: date(2025, 1, 10),
         });
 
-        DataLoader::new(InMemoryBackend::new(md, ud))
+        DataService::from_memory(md, ud)
     }
 
     fn admin_ctx() -> SecurityContext {
@@ -285,8 +333,8 @@ mod tests {
 
     #[tokio::test]
     async fn load_calc_inputs_enforces_access_check() {
-        let loader = test_loader();
-        let err = loader
+        let svc = test_service();
+        let err = svc
             .load_calc_inputs(&user_ctx("bob"), &alice_spec())
             .await
             .unwrap_err();
@@ -295,8 +343,8 @@ mod tests {
 
     #[tokio::test]
     async fn load_calc_inputs_allows_self_access() {
-        let loader = test_loader();
-        let inputs = loader
+        let svc = test_service();
+        let inputs = svc
             .load_calc_inputs(&user_ctx("alice"), &alice_spec())
             .await
             .unwrap();
@@ -305,35 +353,26 @@ mod tests {
 
     #[tokio::test]
     async fn load_calc_inputs_allows_admin_access() {
-        let loader = test_loader();
-        let inputs = loader
+        let svc = test_service();
+        let inputs = svc
             .load_calc_inputs(&admin_ctx(), &alice_spec())
             .await
             .unwrap();
         assert_eq!(inputs.trades.len(), 1);
     }
 
-    #[tokio::test]
-    async fn with_market_data_borrows_without_cloning() {
-        let loader = test_loader();
+    #[test]
+    fn load_market_data_returns_shared_arc() {
+        let svc = test_service();
+        let md = svc.load_market_data();
         let aapl = InstrumentId::new("AAPL");
-        let date_range = DateRange {
-            from: date(2025, 1, 1),
-            to: date(2025, 1, 31),
-        };
-        let result = loader
-            .with_market_data(std::slice::from_ref(&aapl), &date_range, |md| {
-                let price = md.get_price(&aapl, date(2025, 1, 10))?;
-                Ok(price.value())
-            })
-            .await
-            .unwrap();
-        assert_eq!(result, 150.0);
+        let price = md.get_price(&aapl, date(2025, 1, 10)).unwrap();
+        assert_eq!(price.value(), 150.0);
     }
 
     #[tokio::test]
     async fn duplicate_subjects_are_deduplicated() {
-        let loader = test_loader();
+        let svc = test_service();
         let spec = CalcInputSpec {
             subjects: vec![UserId::new("alice"), UserId::new("alice")],
             base_currency: Currency::new("SEK"),
@@ -342,29 +381,26 @@ mod tests {
                 to: date(2025, 1, 31),
             },
         };
-        let inputs = loader.load_calc_inputs(&admin_ctx(), &spec).await.unwrap();
-        // Alice has 1 trade — duplicates in subjects must not double-count
+        let inputs = svc.load_calc_inputs(&admin_ctx(), &spec).await.unwrap();
         assert_eq!(inputs.trades.len(), 1);
     }
 
-    #[tokio::test]
-    async fn list_users_admin_sees_all() {
-        let loader = test_loader();
-        let users = loader.list_users(&admin_ctx()).await.unwrap();
+    #[test]
+    fn list_users_admin_sees_all() {
+        let svc = test_service();
+        let users = svc.list_users(&admin_ctx());
         assert_eq!(users.len(), 1);
         assert_eq!(users[0].id, "alice");
     }
 
-    #[tokio::test]
-    async fn list_users_user_sees_only_self() {
-        let loader = test_loader();
-        // alice sees herself
-        let users = loader.list_users(&user_ctx("alice")).await.unwrap();
+    #[test]
+    fn list_users_user_sees_only_self() {
+        let svc = test_service();
+        let users = svc.list_users(&user_ctx("alice"));
         assert_eq!(users.len(), 1);
         assert_eq!(users[0].id, "alice");
 
-        // bob sees nothing (no user record for bob)
-        let users = loader.list_users(&user_ctx("bob")).await.unwrap();
+        let users = svc.list_users(&user_ctx("bob"));
         assert!(users.is_empty());
     }
 
