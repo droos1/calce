@@ -16,20 +16,46 @@ down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+_TIMESTAMP_COLS = [
+    sa.Column(
+        "created_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    ),
+    sa.Column(
+        "updated_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+    ),
+]
+
+# Tables that have updated_at managed by trigger
+_UPDATED_AT_TABLES = ["users", "instruments", "accounts"]
+
 
 def upgrade() -> None:
+    # -- Trigger function (shared by all tables with updated_at) --
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION set_updated_at()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.updated_at = now();
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+        """
+    )
+
     op.create_table(
         "users",
         sa.Column("id", sa.BigInteger, sa.Identity(always=True), primary_key=True),
         sa.Column("external_id", sa.String(64), unique=True, nullable=False),
         sa.Column("email", sa.String(255)),
         sa.Column("name", sa.String(200)),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.func.now(),
-        ),
+        *_TIMESTAMP_COLS,
     )
 
     op.create_table(
@@ -42,6 +68,7 @@ def upgrade() -> None:
             "instrument_type", sa.String(30), nullable=False, server_default="other"
         ),
         sa.Column("currency", sa.CHAR(3), nullable=False),
+        *_TIMESTAMP_COLS,
     )
 
     op.create_table(
@@ -55,8 +82,13 @@ def upgrade() -> None:
         ),
         sa.Column("currency", sa.CHAR(3), nullable=False),
         sa.Column("label", sa.String(200), nullable=False),
+        *_TIMESTAMP_COLS,
     )
     op.create_index("idx_accounts_user", "accounts", ["user_id"])
+    op.execute(
+        "ALTER TABLE accounts ADD CONSTRAINT uq_accounts_user_label "
+        "UNIQUE (user_id, label)"
+    )
 
     op.create_table(
         "trades",
@@ -90,11 +122,10 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
         sa.CheckConstraint("price >= 0", name="trades_price_check"),
+        sa.CheckConstraint("quantity != 0", name="trades_quantity_check"),
     )
     op.create_index("idx_trades_user", "trades", ["user_id"])
-    op.create_index(
-        "idx_trades_instrument_date", "trades", ["instrument_id", "trade_date"]
-    )
+    op.create_index("idx_trades_account", "trades", ["account_id"])
 
     op.create_table(
         "prices",
@@ -122,13 +153,25 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("from_currency", "to_currency", "rate_date"),
         sa.CheckConstraint("rate > 0", name="fx_rates_rate_check"),
     )
-    op.create_index("idx_fx_rates_date", "fx_rates", ["rate_date"])
+
+    # -- Attach updated_at triggers --
+    for table in _UPDATED_AT_TABLES:
+        op.execute(
+            f"""
+            CREATE TRIGGER trg_{table}_updated_at
+            BEFORE UPDATE ON {table}
+            FOR EACH ROW EXECUTE FUNCTION set_updated_at()
+            """
+        )
 
     # Drop the old sqlx migration tracking table
     op.execute("DROP TABLE IF EXISTS _sqlx_migrations")
 
 
 def downgrade() -> None:
+    for table in _UPDATED_AT_TABLES:
+        op.execute(f"DROP TRIGGER IF EXISTS trg_{table}_updated_at ON {table}")
+    op.execute("DROP FUNCTION IF EXISTS set_updated_at()")
     op.drop_table("fx_rates")
     op.drop_table("prices")
     op.drop_table("trades")

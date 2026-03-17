@@ -28,6 +28,7 @@ class User(Base):
     email = Column(String(255))
     name = Column(String(200))
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     accounts = relationship("Account", back_populates="user")
     trades = relationship("Trade", back_populates="user")
@@ -42,6 +43,8 @@ class Instrument(Base):
     name = Column(String(200))
     instrument_type = Column(String(30), nullable=False, server_default="other")
     currency = Column(CHAR(3), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class Account(Base):
@@ -51,12 +54,15 @@ class Account(Base):
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     currency = Column(CHAR(3), nullable=False)
     label = Column(String(200), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     user = relationship("User", back_populates="accounts")
     trades = relationship("Trade", back_populates="account")
 
     __table_args__ = (
         Index("idx_accounts_user", "user_id"),
+        UniqueConstraint("user_id", "label", name="uq_accounts_user_label"),
     )
 
 
@@ -79,8 +85,9 @@ class Trade(Base):
 
     __table_args__ = (
         CheckConstraint("price >= 0", name="trades_price_check"),
+        CheckConstraint("quantity != 0", name="trades_quantity_check"),
         Index("idx_trades_user", "user_id"),
-        Index("idx_trades_instrument_date", "instrument_id", "trade_date"),
+        Index("idx_trades_account", "account_id"),
     )
 
 
@@ -108,5 +115,4 @@ class FxRate(Base):
 
     __table_args__ = (
         CheckConstraint("rate > 0", name="fx_rates_rate_check"),
-        Index("idx_fx_rates_date", "rate_date"),
     )
