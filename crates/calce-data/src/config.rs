@@ -13,8 +13,3 @@ pub async fn create_pool(database_url: Option<&str>) -> DataResult<PgPool> {
         .await?;
     Ok(pool)
 }
-
-pub async fn run_migrations(pool: &PgPool) -> DataResult<()> {
-    sqlx::migrate!("./migrations").run(pool).await?;
-    Ok(())
-}

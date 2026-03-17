@@ -72,12 +72,12 @@ mod tests {
         let usd = Currency::new("USD");
         let aapl = InstrumentId::new("AAPL");
         let alice = UserId::new("alice");
-        let acct = AccountId::new("alice-usd");
+        let acct = AccountId::new(1);
 
         let trades = vec![
             Trade {
                 user_id: alice.clone(),
-                account_id: acct.clone(),
+                account_id: acct,
                 instrument_id: aapl.clone(),
                 quantity: Quantity::new(100.0),
                 price: Price::new(145.0),
@@ -106,12 +106,12 @@ mod tests {
         let usd = Currency::new("USD");
         let aapl = InstrumentId::new("AAPL");
         let alice = UserId::new("alice");
-        let acct = AccountId::new("alice-usd");
+        let acct = AccountId::new(1);
 
         let trades = vec![
             Trade {
                 user_id: alice.clone(),
-                account_id: acct.clone(),
+                account_id: acct,
                 instrument_id: aapl.clone(),
                 quantity: Quantity::new(100.0),
                 price: Price::new(145.0),
@@ -140,12 +140,12 @@ mod tests {
         let usd = Currency::new("USD");
         let aapl = InstrumentId::new("AAPL");
         let alice = UserId::new("alice");
-        let acct = AccountId::new("alice-usd");
+        let acct = AccountId::new(1);
 
         let trades = vec![
             Trade {
                 user_id: alice.clone(),
-                account_id: acct.clone(),
+                account_id: acct,
                 instrument_id: aapl.clone(),
                 quantity: Quantity::new(50.0),
                 price: Price::new(140.0),
@@ -175,8 +175,8 @@ mod tests {
         let eur = Currency::new("EUR");
         let aapl = InstrumentId::new("AAPL");
         let alice = UserId::new("alice");
-        let acct_usd = AccountId::new("alice-usd");
-        let acct_eur = AccountId::new("alice-eur");
+        let acct_usd = AccountId::new(1);
+        let acct_eur = AccountId::new(2);
 
         let trades = vec![
             Trade {

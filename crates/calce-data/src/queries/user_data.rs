@@ -14,7 +14,8 @@ use crate::error::{DataError, DataResult};
 
 #[derive(Debug, sqlx::FromRow, Serialize)]
 pub struct User {
-    pub id: String,
+    #[serde(rename = "id")]
+    pub external_id: String,
     pub email: Option<String>,
     pub name: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -31,8 +32,12 @@ impl UserDataRepo {
 
     pub async fn get_trades(&self, user_id: &UserId) -> DataResult<Vec<Trade>> {
         let rows = sqlx::query_as::<_, TradeRow>(
-            "SELECT user_id, account_id, instrument_id, quantity, price, currency, trade_date \
-             FROM trades WHERE user_id = $1 ORDER BY trade_date, id",
+            "SELECT u.external_id AS user_id, t.account_id, i.ticker AS instrument_id, \
+                    t.quantity, t.price, t.currency, t.trade_date \
+             FROM trades t \
+             JOIN users u ON t.user_id = u.id \
+             JOIN instruments i ON t.instrument_id = i.id \
+             WHERE u.external_id = $1 ORDER BY t.trade_date, t.id",
         )
         .bind(user_id.as_str())
         .fetch_all(&self.pool)
@@ -45,8 +50,12 @@ impl UserDataRepo {
 
     pub async fn get_all_trades(&self) -> DataResult<Vec<Trade>> {
         let rows = sqlx::query_as::<_, TradeRow>(
-            "SELECT user_id, account_id, instrument_id, quantity, price, currency, trade_date \
-             FROM trades ORDER BY user_id, trade_date, id",
+            "SELECT u.external_id AS user_id, t.account_id, i.ticker AS instrument_id, \
+                    t.quantity, t.price, t.currency, t.trade_date \
+             FROM trades t \
+             JOIN users u ON t.user_id = u.id \
+             JOIN instruments i ON t.instrument_id = i.id \
+             ORDER BY u.external_id, t.trade_date, t.id",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -58,8 +67,8 @@ impl UserDataRepo {
 
     pub async fn upsert_user(&self, id: &UserId, email: Option<&str>) -> DataResult<()> {
         sqlx::query(
-            "INSERT INTO users (id, email) VALUES ($1, $2) \
-             ON CONFLICT (id) DO NOTHING",
+            "INSERT INTO users (external_id, email) VALUES ($1, $2) \
+             ON CONFLICT (external_id) DO NOTHING",
         )
         .bind(id.as_str())
         .bind(email)
@@ -70,22 +79,21 @@ impl UserDataRepo {
 
     pub async fn insert_account(
         &self,
-        id: &AccountId,
         user_id: &UserId,
         currency: Currency,
         label: &str,
-    ) -> DataResult<()> {
-        sqlx::query(
-            "INSERT INTO accounts (id, user_id, currency, label) VALUES ($1, $2, $3, $4) \
-             ON CONFLICT (id) DO NOTHING",
+    ) -> DataResult<AccountId> {
+        let id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO accounts (user_id, currency, label) \
+             VALUES ((SELECT id FROM users WHERE external_id = $1), $2, $3) \
+             RETURNING id",
         )
-        .bind(id.as_str())
         .bind(user_id.as_str())
         .bind(currency.as_str())
         .bind(label)
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await?;
-        Ok(())
+        Ok(AccountId::new(id))
     }
 
     pub async fn list_users_with_trade_counts(
@@ -93,20 +101,20 @@ impl UserDataRepo {
     ) -> DataResult<Vec<(String, Option<String>, i64)>> {
         #[derive(sqlx::FromRow)]
         struct Row {
-            id: String,
+            external_id: String,
             email: Option<String>,
             trade_count: Option<i64>,
         }
         let rows = sqlx::query_as::<_, Row>(
-            "SELECT u.id, u.email, COUNT(t.id)::BIGINT as trade_count \
+            "SELECT u.external_id, u.email, COUNT(t.id)::BIGINT as trade_count \
              FROM users u LEFT JOIN trades t ON u.id = t.user_id \
-             GROUP BY u.id, u.email ORDER BY u.id",
+             GROUP BY u.external_id, u.email ORDER BY u.external_id",
         )
         .fetch_all(&self.pool)
         .await?;
         Ok(rows
             .into_iter()
-            .map(|r| (r.id, r.email, r.trade_count.unwrap_or(0)))
+            .map(|r| (r.external_id, r.email, r.trade_count.unwrap_or(0)))
             .collect())
     }
 
@@ -122,10 +130,14 @@ impl UserDataRepo {
     pub async fn insert_trade(&self, trade: &Trade) -> DataResult<()> {
         sqlx::query(
             "INSERT INTO trades (user_id, account_id, instrument_id, quantity, price, currency, trade_date) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+             VALUES (\
+                 (SELECT id FROM users WHERE external_id = $1), \
+                 $2, \
+                 (SELECT id FROM instruments WHERE ticker = $3), \
+                 $4, $5, $6, $7)",
         )
         .bind(trade.user_id.as_str())
-        .bind(trade.account_id.as_str())
+        .bind(trade.account_id.value())
         .bind(trade.instrument_id.as_str())
         .bind(trade.quantity.value())
         .bind(trade.price.value())
@@ -140,60 +152,66 @@ impl UserDataRepo {
 
     pub async fn find_all_users(&self) -> DataResult<Vec<User>> {
         let users = sqlx::query_as::<_, User>(
-            "SELECT id, email, name, created_at FROM users ORDER BY created_at",
+            "SELECT external_id, email, name, created_at FROM users ORDER BY created_at",
         )
         .fetch_all(&self.pool)
         .await?;
         Ok(users)
     }
 
-    pub async fn get_user(&self, id: &str) -> DataResult<User> {
-        sqlx::query_as::<_, User>("SELECT id, email, name, created_at FROM users WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await?
-            .ok_or_else(|| DataError::NotFound(format!("user '{id}'")))
+    pub async fn get_user(&self, external_id: &str) -> DataResult<User> {
+        sqlx::query_as::<_, User>(
+            "SELECT external_id, email, name, created_at FROM users WHERE external_id = $1",
+        )
+        .bind(external_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| DataError::NotFound(format!("user '{external_id}'")))
     }
 
     pub async fn create_user(
         &self,
-        id: &str,
+        external_id: &str,
         email: Option<&str>,
         name: Option<&str>,
     ) -> DataResult<User> {
         sqlx::query_as::<_, User>(
-            "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) \
-             RETURNING id, email, name, created_at",
+            "INSERT INTO users (external_id, email, name) VALUES ($1, $2, $3) \
+             RETURNING external_id, email, name, created_at",
         )
-        .bind(id)
+        .bind(external_id)
         .bind(email)
         .bind(name)
         .fetch_one(&self.pool)
         .await
-        .map_err(|e| DataError::from_constraint_violation(e, "user", id))
+        .map_err(|e| DataError::from_constraint_violation(e, "user", external_id))
     }
 
-    pub async fn update_user_name(&self, id: &str, name: Option<&str>) -> DataResult<User> {
+    pub async fn update_user_name(
+        &self,
+        external_id: &str,
+        name: Option<&str>,
+    ) -> DataResult<User> {
         sqlx::query_as::<_, User>(
-            "UPDATE users SET name = $2 WHERE id = $1 \
-             RETURNING id, email, name, created_at",
+            "UPDATE users SET name = $2 WHERE external_id = $1 \
+             RETURNING external_id, email, name, created_at",
         )
-        .bind(id)
+        .bind(external_id)
         .bind(name)
         .fetch_optional(&self.pool)
         .await?
-        .ok_or_else(|| DataError::NotFound(format!("user '{id}'")))
+        .ok_or_else(|| DataError::NotFound(format!("user '{external_id}'")))
     }
 
     /// # Errors
     ///
     /// Returns `Conflict` if the user has dependent records (accounts, trades).
-    pub async fn delete_user(&self, id: &str) -> DataResult<bool> {
-        let result = sqlx::query("DELETE FROM users WHERE id = $1")
-            .bind(id)
+    pub async fn delete_user(&self, external_id: &str) -> DataResult<bool> {
+        let result = sqlx::query("DELETE FROM users WHERE external_id = $1")
+            .bind(external_id)
             .execute(&self.pool)
             .await
-            .map_err(|e| DataError::from_constraint_violation(e, "user", id))?;
+            .map_err(|e| DataError::from_constraint_violation(e, "user", external_id))?;
         Ok(result.rows_affected() > 0)
     }
 }
@@ -201,7 +219,7 @@ impl UserDataRepo {
 #[derive(sqlx::FromRow)]
 struct TradeRow {
     user_id: String,
-    account_id: String,
+    account_id: i64,
     instrument_id: String,
     quantity: f64,
     price: f64,

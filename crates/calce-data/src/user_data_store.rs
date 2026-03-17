@@ -1,14 +1,16 @@
+use std::collections::HashMap;
+
 use serde::Serialize;
 
 use crate::auth::SecurityContext;
 use crate::error::{DataError, DataResult};
-use crate::in_memory_user_data::InMemoryUserDataService;
 use crate::permissions;
 use calce_core::domain::trade::Trade;
 use calce_core::domain::user::UserId;
 
+#[derive(Default)]
 pub struct UserDataStore {
-    user_data: InMemoryUserDataService,
+    trades: HashMap<UserId, Vec<Trade>>,
     users: Vec<UserSummary>,
 }
 
@@ -40,28 +42,38 @@ fn dedup_subjects(subjects: &[UserId]) -> Vec<UserId> {
 }
 
 impl UserDataStore {
-    pub fn from_memory(ud: InMemoryUserDataService) -> Self {
-        let users: Vec<UserSummary> = ud
-            .user_ids()
-            .into_iter()
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add_trade(&mut self, trade: Trade) {
+        self.trades
+            .entry(trade.user_id.clone())
+            .or_default()
+            .push(trade);
+    }
+
+    pub fn set_users(&mut self, users: Vec<UserSummary>) {
+        self.users = users;
+    }
+
+    /// Derive the user list from trade keys (when no explicit user info is available).
+    pub fn infer_users(&mut self) {
+        self.users = self
+            .trades
+            .keys()
             .map(|id| UserSummary {
-                id,
+                id: id.as_str().to_owned(),
                 email: None,
                 trade_count: 0,
             })
             .collect();
-
-        Self {
-            user_data: ud,
-            users,
-        }
     }
 
-    pub(crate) fn from_parts(ud: InMemoryUserDataService, users: Vec<UserSummary>) -> Self {
-        Self {
-            user_data: ud,
-            users,
-        }
+    #[must_use]
+    pub fn trades_for(&self, user_id: &UserId) -> Option<Vec<Trade>> {
+        self.trades.get(user_id).cloned()
     }
 
     /// Load trades for the given subjects, enforcing access control.
@@ -81,7 +93,6 @@ impl UserDataStore {
         for subject in &subjects {
             check_user_access(ctx, subject)?;
             let trades = self
-                .user_data
                 .trades_for(subject)
                 .ok_or_else(|| DataError::NoTradesFound(subject.clone()))?;
             all_trades.extend(trades);
@@ -107,7 +118,7 @@ impl UserDataStore {
     }
 
     pub fn trade_count(&self) -> i64 {
-        i64::try_from(self.user_data.trade_count()).unwrap_or(0)
+        i64::try_from(self.trades.values().map(Vec::len).sum::<usize>()).unwrap_or(0)
     }
 }
 
@@ -129,18 +140,18 @@ mod tests {
         let usd = Currency::new("USD");
         let aapl = calce_core::domain::instrument::InstrumentId::new("AAPL");
 
-        let mut ud = InMemoryUserDataService::new();
-        ud.add_trade(Trade {
+        let mut store = UserDataStore::new();
+        store.add_trade(Trade {
             user_id: UserId::new("alice"),
-            account_id: AccountId::new("alice-usd"),
+            account_id: AccountId::new(1),
             instrument_id: aapl,
             quantity: Quantity::new(100.0),
             price: Price::new(150.0),
             currency: usd,
             date: date(2025, 1, 10),
         });
-
-        UserDataStore::from_memory(ud)
+        store.infer_users();
+        store
     }
 
     fn admin_ctx() -> SecurityContext {

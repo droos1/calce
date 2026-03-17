@@ -5,7 +5,7 @@ use calce_core::domain::fx_rate::FxRate;
 use calce_core::domain::instrument::InstrumentId;
 use calce_core::domain::price::Price;
 use calce_data::InMemoryMarketDataService;
-use calce_data::InMemoryUserDataService;
+use calce_data::user_data_store::UserDataStore;
 
 use crate::domain::{Currency, Trade};
 
@@ -48,7 +48,7 @@ impl MarketData {
 
 #[pyclass]
 pub struct UserData {
-    pub inner: InMemoryUserDataService,
+    pub inner: UserDataStore,
 }
 
 #[pymethods]
@@ -56,7 +56,7 @@ impl UserData {
     #[new]
     fn new() -> Self {
         UserData {
-            inner: InMemoryUserDataService::new(),
+            inner: UserDataStore::new(),
         }
     }
 

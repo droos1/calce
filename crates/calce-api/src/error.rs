@@ -42,7 +42,7 @@ fn data_error_response(err: &DataError) -> (StatusCode, &'static str, String) {
         DataError::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND", err.to_string()),
         DataError::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT", err.to_string()),
         DataError::Calc(inner) => calc_error_response(inner),
-        DataError::Sqlx(_) | DataError::Migration(_) | DataError::InvalidDbData { .. } => (
+        DataError::Sqlx(_) | DataError::InvalidDbData { .. } => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "DATA_ERROR",
             err.to_string(),

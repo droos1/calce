@@ -33,7 +33,9 @@ impl MarketDataRepo {
         date: NaiveDate,
     ) -> DataResult<Option<Price>> {
         let row = sqlx::query_scalar::<_, f64>(
-            "SELECT price FROM prices WHERE instrument_id = $1 AND price_date = $2",
+            "SELECT p.price FROM prices p \
+             JOIN instruments i ON p.instrument_id = i.id \
+             WHERE i.ticker = $1 AND p.price_date = $2",
         )
         .bind(instrument.as_str())
         .bind(date)
@@ -50,9 +52,10 @@ impl MarketDataRepo {
         to: NaiveDate,
     ) -> DataResult<Vec<(NaiveDate, Price)>> {
         let rows = sqlx::query_as::<_, (NaiveDate, f64)>(
-            "SELECT price_date, price FROM prices \
-             WHERE instrument_id = $1 AND price_date >= $2 AND price_date <= $3 \
-             ORDER BY price_date",
+            "SELECT p.price_date, p.price FROM prices p \
+             JOIN instruments i ON p.instrument_id = i.id \
+             WHERE i.ticker = $1 AND p.price_date >= $2 AND p.price_date <= $3 \
+             ORDER BY p.price_date",
         )
         .bind(instrument.as_str())
         .bind(from)
@@ -93,12 +96,13 @@ impl MarketDataRepo {
         if instruments.is_empty() {
             return Ok(HashMap::new());
         }
-        let ids: Vec<&str> = instruments.iter().map(InstrumentId::as_str).collect();
+        let tickers: Vec<&str> = instruments.iter().map(InstrumentId::as_str).collect();
         let rows = sqlx::query_as::<_, (String, f64)>(
-            "SELECT instrument_id, price FROM prices \
-             WHERE instrument_id = ANY($1) AND price_date = $2",
+            "SELECT i.ticker, p.price FROM prices p \
+             JOIN instruments i ON p.instrument_id = i.id \
+             WHERE i.ticker = ANY($1) AND p.price_date = $2",
         )
-        .bind(&ids)
+        .bind(&tickers)
         .bind(date)
         .fetch_all(&self.pool)
         .await?;
@@ -191,13 +195,14 @@ impl MarketDataRepo {
         if instruments.is_empty() {
             return Ok(HashMap::new());
         }
-        let ids: Vec<&str> = instruments.iter().map(InstrumentId::as_str).collect();
+        let tickers: Vec<&str> = instruments.iter().map(InstrumentId::as_str).collect();
         let rows = sqlx::query_as::<_, (String, NaiveDate, f64)>(
-            "SELECT instrument_id, price_date, price FROM prices \
-             WHERE instrument_id = ANY($1) AND price_date >= $2 AND price_date <= $3 \
-             ORDER BY instrument_id, price_date",
+            "SELECT i.ticker, p.price_date, p.price FROM prices p \
+             JOIN instruments i ON p.instrument_id = i.id \
+             WHERE i.ticker = ANY($1) AND p.price_date >= $2 AND p.price_date <= $3 \
+             ORDER BY i.ticker, p.price_date",
         )
-        .bind(&ids)
+        .bind(&tickers)
         .bind(from)
         .bind(to)
         .fetch_all(&self.pool)
@@ -255,7 +260,9 @@ impl MarketDataRepo {
 
     pub async fn get_all_prices(&self) -> DataResult<Vec<(InstrumentId, NaiveDate, Price)>> {
         let rows = sqlx::query_as::<_, (String, NaiveDate, f64)>(
-            "SELECT instrument_id, price_date, price FROM prices ORDER BY instrument_id, price_date",
+            "SELECT i.ticker, p.price_date, p.price FROM prices p \
+             JOIN instruments i ON p.instrument_id = i.id \
+             ORDER BY i.ticker, p.price_date",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -284,7 +291,7 @@ impl MarketDataRepo {
 
     pub async fn list_instruments(&self) -> DataResult<Vec<(String, String, Option<String>)>> {
         let rows = sqlx::query_as::<_, (String, String, Option<String>)>(
-            "SELECT id, currency, name FROM instruments ORDER BY id",
+            "SELECT ticker, currency, name FROM instruments ORDER BY ticker",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -310,8 +317,9 @@ impl MarketDataRepo {
         price: Price,
     ) -> DataResult<()> {
         sqlx::query(
-            "INSERT INTO prices (instrument_id, price_date, price) VALUES ($1, $2, $3) \
-             ON CONFLICT (instrument_id, price_date) DO UPDATE SET price = EXCLUDED.price",
+            "INSERT INTO prices (instrument_id, price_date, price) \
+             VALUES ((SELECT id FROM instruments WHERE ticker = $1), $2, $3) \
+             ON CONFLICT ON CONSTRAINT uq_prices_instrument_date DO UPDATE SET price = EXCLUDED.price",
         )
         .bind(instrument.as_str())
         .bind(date)
@@ -338,8 +346,8 @@ impl MarketDataRepo {
 
     pub async fn insert_instrument(&self, id: &InstrumentId, currency: Currency) -> DataResult<()> {
         sqlx::query(
-            "INSERT INTO instruments (id, currency) VALUES ($1, $2) \
-             ON CONFLICT (id) DO NOTHING",
+            "INSERT INTO instruments (ticker, currency) VALUES ($1, $2) \
+             ON CONFLICT (ticker) DO NOTHING",
         )
         .bind(id.as_str())
         .bind(currency.as_str())

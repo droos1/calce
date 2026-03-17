@@ -38,11 +38,6 @@ async fn create_postgres_service() -> (MarketDataStore, UserDataStore, PgPool) {
         .await
         .expect("failed to connect to database");
 
-    sqlx::migrate!("../calce-data/migrations")
-        .run(&pool)
-        .await
-        .expect("failed to run migrations");
-
     tracing::info!("Backend: postgres ({database_url})");
     let (market_data, user_data) = loader::load_from_postgres(&pool)
         .await
@@ -160,7 +155,7 @@ async fn main() {
         }
         "njorda-cache" => {
             let md = create_njorda_cache_service();
-            let ud = UserDataStore::from_memory(calce_data::InMemoryUserDataService::new());
+            let ud = UserDataStore::new();
             (md, ud, None)
         }
         other => {
@@ -199,7 +194,7 @@ mod tests {
 
     fn test_state() -> AppState {
         let market_data = MarketDataStore::from_memory(seed::seed_market_data());
-        let user_data = UserDataStore::from_memory(seed::seed_user_data());
+        let user_data = seed::seed_user_data();
         AppState {
             market_data: Arc::new(market_data),
             user_data: Arc::new(user_data),

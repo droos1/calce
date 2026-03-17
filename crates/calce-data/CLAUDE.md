@@ -13,7 +13,7 @@ Postgres-backed storage and the data stores that the API layer consumes.
 - `auth.rs` — `SecurityContext`, `Role`: caller identity
 - `permissions.rs` — `can_access_user_data()`: access-control rules
 - `error.rs` — `DataError` enum: auth, not-found, DB, constraint violations
-- `config.rs` — `create_pool()`, `run_migrations()`
+- `config.rs` — `create_pool()`
 
 ### How it fits together
 
@@ -21,7 +21,7 @@ Postgres-backed storage and the data stores that the API layer consumes.
 loader::load_from_postgres(pool)
     ├── queries/  (async SQL)
     ├── MarketDataStore  (wraps InMemoryMarketDataService from calce-core)
-    └── UserDataStore    (wraps InMemoryUserDataService from calce-core)
+    └── UserDataStore    (trades + users + auth)
 ```
 
 At startup, `load_from_postgres` bulk-loads all data via `queries/` into the two
@@ -32,9 +32,10 @@ endpoints and data import paths.
 
 ## Database
 
-Local Postgres via Docker (port 5433). Schema managed by sqlx migrations.
+Local Postgres via Docker (port 5433). Schema managed by Alembic in `services/calce-db/`.
 
 ```sh
-invoke db       # start
-invoke db-stop  # stop
+invoke db          # start postgres
+invoke db-migrate  # run migrations
+invoke db-stop     # stop postgres
 ```

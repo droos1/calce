@@ -12,6 +12,8 @@ crates/
 ├── calce-integrations/     — external data source integrations (njorda, etc.)
 ├── calce-api/              — HTTP server, wires data + core
 └── calce-python/           — PyO3 bindings (depends on core only)
+services/
+└── calce-db/               — database schema management (Alembic/SQLAlchemy)
 docs/                       — reference, design and architecture documentation
 tools/                      — developer and testing tools, e.g. benchmarking
 working_docs/               — ephemeral working notes, design exploration, task tracking

@@ -16,8 +16,8 @@ use calce_core::services::test_market_data::TestMarketData;
 
 fn setup_multi_currency_scenario() -> (TestMarketData, Vec<Trade>, NaiveDate) {
     let alice = UserId::new("alice");
-    let acct_usd = AccountId::new("alice-usd");
-    let acct_eur = AccountId::new("alice-eur");
+    let acct_usd = AccountId::new(1);
+    let acct_eur = AccountId::new(2);
     let date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
     let usd = Currency::new("USD");
     let eur = Currency::new("EUR");
@@ -35,7 +35,7 @@ fn setup_multi_currency_scenario() -> (TestMarketData, Vec<Trade>, NaiveDate) {
         // Alice buys 100 AAPL, sells 20 → net 80
         Trade {
             user_id: alice.clone(),
-            account_id: acct_usd.clone(),
+            account_id: acct_usd,
             instrument_id: aapl.clone(),
             quantity: Quantity::new(100.0),
             price: Price::new(145.0),
@@ -44,7 +44,7 @@ fn setup_multi_currency_scenario() -> (TestMarketData, Vec<Trade>, NaiveDate) {
         },
         Trade {
             user_id: alice.clone(),
-            account_id: acct_usd.clone(),
+            account_id: acct_usd,
             instrument_id: aapl,
             quantity: Quantity::new(-20.0),
             price: Price::new(155.0),
@@ -104,7 +104,7 @@ fn multi_currency_portfolio() {
 #[test]
 fn retroactive_calculation() {
     let alice = UserId::new("alice");
-    let acct = AccountId::new("alice-usd");
+    let acct = AccountId::new(1);
     let usd = Currency::new("USD");
     let aapl = InstrumentId::new("AAPL");
 
@@ -117,7 +117,7 @@ fn retroactive_calculation() {
     let trades = vec![
         Trade {
             user_id: alice.clone(),
-            account_id: acct.clone(),
+            account_id: acct,
             instrument_id: aapl.clone(),
             quantity: Quantity::new(50.0),
             price: Price::new(135.0),
@@ -193,13 +193,13 @@ fn aggregate_then_value() {
     let usd = Currency::new("USD");
     let aapl = InstrumentId::new("AAPL");
     let alice = UserId::new("alice");
-    let acct = AccountId::new("alice-usd");
+    let acct = AccountId::new(1);
     let date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
 
     let trades = vec![
         Trade {
             user_id: alice.clone(),
-            account_id: acct.clone(),
+            account_id: acct,
             instrument_id: aapl.clone(),
             quantity: Quantity::new(100.0),
             price: Price::new(145.0),
@@ -240,7 +240,7 @@ fn aggregate_then_value() {
 #[test]
 fn portfolio_report_integration() {
     let alice = UserId::new("alice");
-    let acct = AccountId::new("alice-usd");
+    let acct = AccountId::new(1);
     let usd = Currency::new("USD");
     let sek = Currency::new("SEK");
     let aapl = InstrumentId::new("AAPL");

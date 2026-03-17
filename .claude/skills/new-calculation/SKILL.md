@@ -57,7 +57,7 @@ Design tests that a human can read and mentally verify: "if these pass, the calc
 
 Guidelines:
 - Put tests in the appropriate module (usually `crates/calce-core/src/calc/<module>.rs` or a new file)
-- Use the existing test patterns: `InMemoryMarketDataService`, `InMemoryUserDataService`, static dates and prices
+- Use the existing test patterns: `InMemoryMarketDataService`, `UserDataStore`, static dates and prices
 - Keep the test count small and focused. Aim for 3-7 tests covering:
   - **Happy path**: basic case with known inputs and expected outputs
   - **Cross-currency**: if the calculation involves monetary values, test with FX conversion

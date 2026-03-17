@@ -88,7 +88,7 @@ impl Trade {
     #[pyo3(signature = (user_id, account_id, instrument_id, quantity, price, currency, date))]
     fn new(
         user_id: &str,
-        account_id: &str,
+        account_id: i64,
         instrument_id: &str,
         quantity: f64,
         price: f64,
@@ -114,8 +114,8 @@ impl Trade {
     }
 
     #[getter]
-    fn account_id(&self) -> &str {
-        self.inner.account_id.as_str()
+    fn account_id(&self) -> i64 {
+        self.inner.account_id.value()
     }
 
     #[getter]

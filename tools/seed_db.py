@@ -117,11 +117,11 @@ def gen_fx_rates(
 def gen_users_and_accounts(
     n_users: int,
     rng: random.Random,
-) -> tuple[list[tuple[str, str]], list[tuple[str, str, str, str]]]:
+) -> tuple[list[tuple[str, str]], list[tuple[str, str, str]]]:
     """Return (users, accounts).
 
-    users: (id, email)
-    accounts: (account_id, user_id, currency, label)
+    users: (external_id, email)
+    accounts: (user_external_id, currency, label)
     """
     users = []
     accounts = []
@@ -133,35 +133,32 @@ def gen_users_and_accounts(
         n_accts = rng.randint(1, 3)
         acct_currencies = rng.sample(CURRENCIES, k=n_accts)
         for j, ccy in enumerate(acct_currencies, 1):
-            acct_id = f"{uid}_acct_{j}"
             label = f"{uid} {ccy} account"
-            accounts.append((acct_id, uid, ccy, label))
+            accounts.append((uid, ccy, label))
     return users, accounts
 
 
 def gen_trades(
-    users_accounts: list[tuple[str, str, str, str]],  # (acct_id, user_id, ccy, label)
+    account_map: dict[int, tuple[str, str]],  # db_id -> (user_external_id, currency)
     instruments: list[tuple[str, str]],  # (ticker, ccy)
     price_lookup: dict[tuple[str, date], float],
     trading_days: list[date],
     avg_trades_per_user: int,
     rng: random.Random,
-) -> list[tuple[str, str, str, float, float, str, date]]:
-    """Generate trades: (user_id, account_id, instrument_id, qty, price, ccy, date)."""
+) -> list[tuple[str, int, str, float, float, str, date]]:
+    """Generate trades: (user_external_id, account_id, ticker, qty, price, ccy, date)."""
     # Group accounts by user
-    user_accounts: dict[str, list[tuple[str, str]]] = {}
-    for acct_id, user_id, ccy, _ in users_accounts:
-        user_accounts.setdefault(user_id, []).append((acct_id, ccy))
+    user_accounts: dict[str, list[tuple[int, str]]] = {}
+    for acct_id, (user_ext_id, ccy) in account_map.items():
+        user_accounts.setdefault(user_ext_id, []).append((acct_id, ccy))
 
-    # Build instrument lookup by currency for matching trades to accounts
-    instr_by_ccy: dict[str, list[str]] = {}
+    # Build instrument lookup by currency
     instr_ccy: dict[str, str] = {}
     for ticker, ccy in instruments:
-        instr_by_ccy.setdefault(ccy, []).append(ticker)
         instr_ccy[ticker] = ccy
 
     all_tickers = [t for t, _ in instruments]
-    rows: list[tuple[str, str, str, float, float, str, date]] = []
+    rows: list[tuple[str, int, str, float, float, str, date]] = []
 
     for user_id, accts in user_accounts.items():
         # Pick 5-20 instruments for this user
@@ -254,11 +251,6 @@ def main():
     print(f"Generating {args.users} users with accounts...")
     users, accounts = gen_users_and_accounts(args.users, rng)
 
-    print(f"Generating trades (~{args.trades_per_user} per user)...")
-    trade_rows = gen_trades(
-        accounts, instruments, price_lookup, trading_days, args.trades_per_user, rng
-    )
-
     gen_time = time.time() - t0
     print(f"Data generated in {gen_time:.1f}s")
 
@@ -268,7 +260,7 @@ def main():
     cur = conn.cursor()
 
     print("Truncating tables...")
-    cur.execute("TRUNCATE trades, accounts, users, prices, fx_rates, instruments CASCADE")
+    cur.execute("TRUNCATE trades, accounts, users, prices, fx_rates, instruments RESTART IDENTITY CASCADE")
 
     def timed_insert(label, sql, rows, page_size=5000):
         t = time.time()
@@ -278,13 +270,19 @@ def main():
 
     timed_insert(
         "instruments",
-        "INSERT INTO instruments (id, currency) VALUES %s",
+        "INSERT INTO instruments (ticker, currency) VALUES %s",
         instruments,
     )
+
+    # Build ticker -> instrument_id map (need integer FKs for prices/trades)
+    conn.commit()
+    cur.execute("SELECT ticker, id FROM instruments")
+    ticker_to_id: dict[str, int] = {row[0]: row[1] for row in cur.fetchall()}
+
     timed_insert(
         "prices",
         "INSERT INTO prices (instrument_id, price_date, price) VALUES %s",
-        price_rows,
+        [(ticker_to_id[ticker], d, p) for ticker, d, p in price_rows],
         page_size=10000,
     )
     timed_insert(
@@ -294,18 +292,36 @@ def main():
     )
     timed_insert(
         "users",
-        "INSERT INTO users (id, email) VALUES %s",
+        "INSERT INTO users (external_id, email) VALUES %s",
         users,
     )
+
+    # Build user external_id -> internal id map
+    conn.commit()
+    cur.execute("SELECT external_id, id FROM users")
+    user_to_id: dict[str, int] = {row[0]: row[1] for row in cur.fetchall()}
+
     timed_insert(
         "accounts",
-        "INSERT INTO accounts (id, user_id, currency, label) VALUES %s",
-        accounts,
+        "INSERT INTO accounts (user_id, currency, label) VALUES %s",
+        [(user_to_id[user_ext_id], ccy, label) for user_ext_id, ccy, label in accounts],
     )
+
+    # Build account_id map: db_id -> (user_external_id, currency)
+    conn.commit()
+    cur.execute("SELECT a.id, u.external_id, a.currency FROM accounts a JOIN users u ON a.user_id = u.id")
+    account_map: dict[int, tuple[str, str]] = {row[0]: (row[1], row[2]) for row in cur.fetchall()}
+
+    print(f"Generating trades (~{args.trades_per_user} per user)...")
+    trade_rows = gen_trades(
+        account_map, instruments, price_lookup, trading_days, args.trades_per_user, rng
+    )
+
     timed_insert(
         "trades",
         "INSERT INTO trades (user_id, account_id, instrument_id, quantity, price, currency, trade_date) VALUES %s",
-        trade_rows,
+        [(user_to_id[user_ext_id], acct_id, ticker_to_id[ticker], qty, price, ccy, trade_date)
+         for user_ext_id, acct_id, ticker, qty, price, ccy, trade_date in trade_rows],
         page_size=10000,
     )
 

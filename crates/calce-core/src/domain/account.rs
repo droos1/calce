@@ -1,7 +1,7 @@
 use super::currency::Currency;
 use super::user::UserId;
 
-string_id!(AccountId);
+int_id!(AccountId);
 
 #[derive(Clone, Debug)]
 pub struct Account {

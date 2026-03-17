@@ -1,0 +1,13 @@
+[project]
+name = "calce-db"
+version = "0.1.0"
+description = "Database schema management for Calce"
+requires-python = ">=3.12"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "alembic>=1.14",
+    "psycopg2-binary>=2.9",
+]
+
+[tool.setuptools]
+packages = ["calce_db"]

@@ -73,3 +73,16 @@ pub struct Outcome<T> {
 Functions return `CalceResult<Outcome<T>>` — the `Result` catches structural errors (e.g. currency mismatch, aggregation conflicts) while `Outcome` collects data-quality warnings (missing prices, missing FX rates) that allow partial computation.
 
 Currently implemented for `value_positions`, `value_change_summary`, and `portfolio_report`.
+
+## Database Schema Management
+
+Schema is managed by Alembic in `services/calce-db/`, separate from the Rust application. SQLAlchemy models in `calce_db/models.py` are the source of truth for the schema.
+
+```sh
+invoke db-migrate    # apply migrations (run before deploying services)
+invoke db-revision   # autogenerate a new migration from model changes
+invoke db-downgrade  # roll back one migration
+invoke db-reset      # wipe and recreate (dev only)
+```
+
+This separation enables running migrations independently of application deploys, rollbacks, and leveraging Alembic's full migration tooling.

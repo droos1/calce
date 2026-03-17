@@ -59,6 +59,51 @@ def db_stop(c):
     c.run("docker compose down", pty=True)
 
 
+CALCE_DB = "services/calce-db"
+
+
+def _alembic(c, args):
+    c.run(f"cd {CALCE_DB} && uv run alembic {args}", pty=True)
+
+
+@task
+def db_migrate(c):
+    """Run Alembic migrations (upgrade to head)."""
+    _alembic(c, "upgrade head")
+
+
+@task
+def db_revision(c, message="auto"):
+    """Create a new Alembic migration (autogenerate from models)."""
+    _alembic(c, f'revision --autogenerate -m "{message}"')
+
+
+@task
+def db_downgrade(c, revision="-1"):
+    """Roll back Alembic migration (default: one step)."""
+    _alembic(c, f"downgrade {revision}")
+
+
+@task
+def db_reset(c):
+    """Reset database: drop all tables, re-run migrations, then seed."""
+    answer = input("This will wipe the entire database. Continue? [y/N] ")
+    if answer.lower() != "y":
+        print("Aborted.")
+        return
+    import time as _time
+    for i in range(3, 0, -1):
+        print(f"  Wiping in {i}...")
+        _time.sleep(1)
+    c.run(
+        'docker compose exec -T postgres psql -U calce -d calce -c '
+        '"DROP SCHEMA public CASCADE; CREATE SCHEMA public;"',
+        pty=True,
+    )
+    _alembic(c, "upgrade head")
+    seed_db(c)
+
+
 @task
 def seed_db(c, instruments=1000, users=100, trades_per_user=100, history_years=5):
     """Seed the database with realistic test data."""

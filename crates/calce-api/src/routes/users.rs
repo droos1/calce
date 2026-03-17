@@ -38,7 +38,7 @@ async fn list_users(
 
 #[derive(Deserialize)]
 struct CreateUserRequest {
-    id: String,
+    external_id: String,
     email: Option<String>,
     name: Option<String>,
 }
@@ -50,7 +50,11 @@ async fn create_user(
 ) -> Result<(StatusCode, Json<User>), ApiError> {
     auth::require_admin(&ctx)?;
     let user = repo(&state)?
-        .create_user(&body.id, body.email.as_deref(), body.name.as_deref())
+        .create_user(
+            &body.external_id,
+            body.email.as_deref(),
+            body.name.as_deref(),
+        )
         .await?;
     Ok((StatusCode::CREATED, Json(user)))
 }

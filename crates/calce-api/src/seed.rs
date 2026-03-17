@@ -7,7 +7,7 @@ use calce_core::domain::quantity::Quantity;
 use calce_core::domain::trade::Trade;
 use calce_core::domain::user::UserId;
 use calce_data::InMemoryMarketDataService;
-use calce_data::InMemoryUserDataService;
+use calce_data::user_data_store::UserDataStore;
 use chrono::{Datelike, NaiveDate};
 
 fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -84,16 +84,16 @@ fn add_daily_fx_rates(
     }
 }
 
-pub(crate) fn seed_user_data() -> InMemoryUserDataService {
-    let mut svc = InMemoryUserDataService::new();
+pub(crate) fn seed_user_data() -> UserDataStore {
+    let mut store = UserDataStore::new();
 
     let alice = UserId::new("alice");
-    let acct_usd = AccountId::new("alice-usd");
-    let acct_eur = AccountId::new("alice-eur");
+    let acct_usd = AccountId::new(1);
+    let acct_eur = AccountId::new(2);
     let usd = Currency::new("USD");
     let eur = Currency::new("EUR");
 
-    svc.add_trade(Trade {
+    store.add_trade(Trade {
         user_id: alice.clone(),
         account_id: acct_usd,
         instrument_id: InstrumentId::new("AAPL"),
@@ -103,7 +103,7 @@ pub(crate) fn seed_user_data() -> InMemoryUserDataService {
         date: date(2024, 1, 10),
     });
 
-    svc.add_trade(Trade {
+    store.add_trade(Trade {
         user_id: alice,
         account_id: acct_eur,
         instrument_id: InstrumentId::new("VOW3"),
@@ -113,7 +113,8 @@ pub(crate) fn seed_user_data() -> InMemoryUserDataService {
         date: date(2024, 2, 15),
     });
 
-    svc
+    store.infer_users();
+    store
 }
 
 #[cfg(test)]

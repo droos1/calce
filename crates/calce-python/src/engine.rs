@@ -52,7 +52,6 @@ impl CalcEngine {
         })?;
         let positions = aggregation::aggregate_positions(&trades, self.ctx.as_of_date)
             .map_err(calce_err_to_py)?;
-        // TODO: surface warnings to Python
         market_value::value_positions(&positions, &self.ctx, &md.inner)
             .map(|outcome| MarketValueResult {
                 inner: outcome.value,
@@ -66,7 +65,6 @@ impl CalcEngine {
         let trades = ud.inner.trades_for(&self.user_id).ok_or_else(|| {
             NoTradesFoundError::new_err(format!("No trades found for user {}", self.user_id))
         })?;
-        // TODO: surface warnings to Python
         portfolio::portfolio_report(&trades, &self.ctx, &md.inner)
             .map(|outcome| PortfolioReport {
                 inner: outcome.value,

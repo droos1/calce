@@ -1,6 +1,5 @@
 use crate::error::DataResult;
 use crate::in_memory_market_data::InMemoryMarketDataService;
-use crate::in_memory_user_data::InMemoryUserDataService;
 use crate::market_data_store::{InstrumentSummary, MarketDataStore};
 use crate::queries::market_data::MarketDataRepo;
 use crate::queries::user_data::UserDataRepo;
@@ -47,21 +46,21 @@ pub async fn load_from_postgres(pool: &PgPool) -> DataResult<(MarketDataStore, U
     }
     md.freeze();
 
-    let mut ud = InMemoryUserDataService::new();
+    let mut ud = UserDataStore::new();
     for trade in trades {
         ud.add_trade(trade);
     }
+    ud.set_users(users);
 
     tracing::info!(
         "Data loaded: {} users, {} instruments, {} prices, {} FX rates",
-        users.len(),
+        ud.user_count(),
         instruments.len(),
         md.price_count(),
         md.fx_rate_count(),
     );
 
     let market_store = MarketDataStore::from_parts(md, instruments);
-    let user_store = UserDataStore::from_parts(ud, users);
 
-    Ok((market_store, user_store))
+    Ok((market_store, ud))
 }

@@ -14,7 +14,7 @@ Core Rust library — no DB or async dependencies. Fast to compile, easy to test
 
 ## Key Design Decisions
 
-- Calc functions take `&dyn MarketDataService`, never a concrete implementation. The in-memory implementations (`InMemoryMarketDataService`, `InMemoryUserDataService`) live in `calce-data`.
+- Calc functions take `&dyn MarketDataService`, never a concrete implementation. `InMemoryMarketDataService` lives in `calce-data`.
 - `TestMarketData` (HashMap-based, no freeze step) is available for unit tests via `services::test_market_data`. It is always compiled (not `#[cfg(test)]`) so integration tests in `tests/` can use it too.
 - Domain types use `f64` and derive `PartialEq` but not `Eq`.
 - The `accounting` module uses `rust_decimal::Decimal` where debits and credits must balance exactly.

@@ -15,9 +15,6 @@ pub enum DataError {
     #[error("Database error: {0}")]
     Sqlx(#[from] sqlx::Error),
 
-    #[error("Migration error: {0}")]
-    Migration(#[from] sqlx::migrate::MigrateError),
-
     #[error("{0}")]
     Calc(#[from] CalceError),
 

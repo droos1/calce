@@ -213,7 +213,7 @@ mod tests {
         let sek = Currency::new("SEK");
         let aapl = InstrumentId::new("AAPL");
         let alice = UserId::new("alice");
-        let acct = AccountId::new("alice-usd");
+        let acct = AccountId::new(1);
 
         let today = NaiveDate::from_ymd_opt(2025, 3, 15).unwrap();
         let day_ago = today - chrono::Days::new(1);

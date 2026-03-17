@@ -91,11 +91,7 @@ async fn portfolio_report(
     let trades = state.user_data.load_trades(&security_ctx, &[user_id])?;
     let market_data = state.market_data.market_data();
 
-    let outcome = calce_core::reports::portfolio::portfolio_report(
-        &trades,
-        &ctx,
-        &*market_data,
-    )?;
+    let outcome = calce_core::reports::portfolio::portfolio_report(&trades, &ctx, &*market_data)?;
     // TODO: surface outcome.warnings in response headers or a wrapper
     Ok(Json(outcome.value))
 }
