@@ -60,7 +60,7 @@ mod tests {
     use crate::domain::price::Price;
     use crate::domain::quantity::Quantity;
     use crate::domain::user::UserId;
-    use crate::services::market_data::InMemoryMarketDataService;
+    use crate::services::test_market_data::TestMarketData;
     use chrono::NaiveDate;
 
     #[test]
@@ -88,7 +88,7 @@ mod tests {
             date: trade_date,
         }];
 
-        let mut market_data = InMemoryMarketDataService::new();
+        let mut market_data = TestMarketData::new();
         market_data.add_price(&aapl, today, Price::new(200.0));
         market_data.add_price(&aapl, day_ago, Price::new(198.0));
         market_data.add_price(&aapl, week_ago, Price::new(190.0));
@@ -98,7 +98,6 @@ mod tests {
         for date in [today, day_ago, week_ago, year_ago, prev_year_end] {
             market_data.add_fx_rate(FxRate::new(usd, sek, 10.0), date);
         }
-        market_data.freeze();
 
         let ctx = CalculationContext::new(sek, today);
         let outcome = portfolio_report(&trades, &ctx, &market_data).unwrap();

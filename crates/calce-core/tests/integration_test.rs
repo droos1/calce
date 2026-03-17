@@ -12,15 +12,9 @@ use calce_core::domain::quantity::Quantity;
 use calce_core::domain::trade::Trade;
 use calce_core::domain::user::UserId;
 use calce_core::reports::portfolio::portfolio_report;
-use calce_core::services::market_data::InMemoryMarketDataService;
-use calce_core::services::user_data::InMemoryUserDataService;
+use calce_core::services::test_market_data::TestMarketData;
 
-fn setup_multi_currency_scenario() -> (
-    InMemoryMarketDataService,
-    InMemoryUserDataService,
-    UserId,
-    NaiveDate,
-) {
+fn setup_multi_currency_scenario() -> (TestMarketData, Vec<Trade>, NaiveDate) {
     let alice = UserId::new("alice");
     let acct_usd = AccountId::new("alice-usd");
     let acct_eur = AccountId::new("alice-eur");
@@ -31,47 +25,45 @@ fn setup_multi_currency_scenario() -> (
     let aapl = InstrumentId::new("AAPL");
     let vow3 = InstrumentId::new("VOW3");
 
-    let mut market_data = InMemoryMarketDataService::new();
+    let mut market_data = TestMarketData::new();
     market_data.add_price(&aapl, date, Price::new(150.0));
     market_data.add_price(&vow3, date, Price::new(120.0));
     market_data.add_fx_rate(FxRate::new(usd, sek, 10.5), date);
     market_data.add_fx_rate(FxRate::new(eur, sek, 11.4), date);
-    market_data.freeze();
 
-    let mut user_data = InMemoryUserDataService::new();
+    let trades = vec![
+        // Alice buys 100 AAPL, sells 20 → net 80
+        Trade {
+            user_id: alice.clone(),
+            account_id: acct_usd.clone(),
+            instrument_id: aapl.clone(),
+            quantity: Quantity::new(100.0),
+            price: Price::new(145.0),
+            currency: usd,
+            date,
+        },
+        Trade {
+            user_id: alice.clone(),
+            account_id: acct_usd.clone(),
+            instrument_id: aapl,
+            quantity: Quantity::new(-20.0),
+            price: Price::new(155.0),
+            currency: usd,
+            date,
+        },
+        // Alice buys 50 VOW3
+        Trade {
+            user_id: alice,
+            account_id: acct_eur,
+            instrument_id: vow3,
+            quantity: Quantity::new(50.0),
+            price: Price::new(115.0),
+            currency: eur,
+            date,
+        },
+    ];
 
-    // Alice buys 100 AAPL, sells 20 → net 80
-    user_data.add_trade(Trade {
-        user_id: alice.clone(),
-        account_id: acct_usd.clone(),
-        instrument_id: aapl.clone(),
-        quantity: Quantity::new(100.0),
-        price: Price::new(145.0),
-        currency: usd,
-        date,
-    });
-    user_data.add_trade(Trade {
-        user_id: alice.clone(),
-        account_id: acct_usd.clone(),
-        instrument_id: aapl,
-        quantity: Quantity::new(-20.0),
-        price: Price::new(155.0),
-        currency: usd,
-        date,
-    });
-
-    // Alice buys 50 VOW3
-    user_data.add_trade(Trade {
-        user_id: alice.clone(),
-        account_id: acct_eur,
-        instrument_id: vow3,
-        quantity: Quantity::new(50.0),
-        price: Price::new(115.0),
-        currency: eur,
-        date,
-    });
-
-    (market_data, user_data, alice, date)
+    (market_data, trades, date)
 }
 
 // ---------------------------------------------------------------------------
@@ -80,10 +72,9 @@ fn setup_multi_currency_scenario() -> (
 
 #[test]
 fn multi_currency_portfolio() {
-    let (market_data, user_data, alice, date) = setup_multi_currency_scenario();
+    let (market_data, trades, date) = setup_multi_currency_scenario();
     let sek = Currency::new("SEK");
 
-    let trades = user_data.trades_for(&alice).unwrap();
     let positions = aggregate_positions(&trades, date).unwrap();
     let ctx = CalculationContext::new(sek, date);
     let result = value_positions(&positions, &ctx, &market_data)
@@ -120,31 +111,30 @@ fn retroactive_calculation() {
     let early = NaiveDate::from_ymd_opt(2025, 1, 10).unwrap();
     let late = NaiveDate::from_ymd_opt(2025, 1, 20).unwrap();
 
-    let mut market_data = InMemoryMarketDataService::new();
+    let mut market_data = TestMarketData::new();
     market_data.add_price(&aapl, early, Price::new(140.0));
-    market_data.freeze();
 
-    let mut user_data = InMemoryUserDataService::new();
-    user_data.add_trade(Trade {
-        user_id: alice.clone(),
-        account_id: acct.clone(),
-        instrument_id: aapl.clone(),
-        quantity: Quantity::new(50.0),
-        price: Price::new(135.0),
-        currency: usd,
-        date: early,
-    });
-    user_data.add_trade(Trade {
-        user_id: alice.clone(),
-        account_id: acct,
-        instrument_id: aapl,
-        quantity: Quantity::new(30.0),
-        price: Price::new(145.0),
-        currency: usd,
-        date: late,
-    });
+    let trades = vec![
+        Trade {
+            user_id: alice.clone(),
+            account_id: acct.clone(),
+            instrument_id: aapl.clone(),
+            quantity: Quantity::new(50.0),
+            price: Price::new(135.0),
+            currency: usd,
+            date: early,
+        },
+        Trade {
+            user_id: alice,
+            account_id: acct,
+            instrument_id: aapl,
+            quantity: Quantity::new(30.0),
+            price: Price::new(145.0),
+            currency: usd,
+            date: late,
+        },
+    ];
 
-    let trades = user_data.trades_for(&alice).unwrap();
     let positions = aggregate_positions(&trades, early).unwrap();
     let ctx = CalculationContext::new(usd, early);
     let result = value_positions(&positions, &ctx, &market_data)
@@ -170,12 +160,11 @@ fn value_positions_multi_currency() {
     let vow3 = InstrumentId::new("VOW3");
     let date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
 
-    let mut market_data = InMemoryMarketDataService::new();
+    let mut market_data = TestMarketData::new();
     market_data.add_price(&aapl, date, Price::new(150.0));
     market_data.add_price(&vow3, date, Price::new(120.0));
     market_data.add_fx_rate(FxRate::new(usd, sek, 10.5), date);
     market_data.add_fx_rate(FxRate::new(eur, sek, 11.4), date);
-    market_data.freeze();
 
     let positions = vec![
         calce_core::domain::position::Position {
@@ -234,9 +223,8 @@ fn aggregate_then_value() {
     assert_eq!(positions[0].quantity.value(), 60.0);
 
     // Step 2: value positions
-    let mut market_data = InMemoryMarketDataService::new();
+    let mut market_data = TestMarketData::new();
     market_data.add_price(&aapl, date, Price::new(150.0));
-    market_data.freeze();
     let ctx = CalculationContext::new(usd, date);
 
     let result = value_positions(&positions, &ctx, &market_data)
@@ -265,7 +253,7 @@ fn portfolio_report_integration() {
 
     let trade_date = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
 
-    let mut market_data = InMemoryMarketDataService::new();
+    let mut market_data = TestMarketData::new();
     market_data.add_price(&aapl, today, Price::new(200.0));
     market_data.add_price(&aapl, day_ago, Price::new(198.0));
     market_data.add_price(&aapl, week_ago, Price::new(190.0));
@@ -274,7 +262,6 @@ fn portfolio_report_integration() {
     for date in [today, day_ago, week_ago, year_ago, prev_year_end] {
         market_data.add_fx_rate(FxRate::new(usd, sek, 10.0), date);
     }
-    market_data.freeze();
 
     let trades = vec![Trade {
         user_id: alice,

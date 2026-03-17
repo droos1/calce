@@ -20,14 +20,12 @@ working_docs/               — ephemeral working notes, design exploration, tas
 
 ## Documentation
 
-| Path | Purpose | When to update |
-|------|---------|----------------|
-| `docs/architecture.md` | Overall architecture, design principles, layer boundaries | Major structural changes |
-| `docs/rust-guidelines.md` | Rust conventions and architecture rationale | When conventions change |
-| `docs/calculations/methodology.md` | Calculation formulas and assumptions (`#CALC_*` tags) | Adding/changing a calculation |
-| `docs/auth.md` | Authentication and authorization design | Auth changes |
+Permanent docs — keep accurate but concise:
 
-These are **permanent documentation** — keep them accurate but concise.
+- `docs/architecture.md` — overall architecture, design principles, layer boundaries
+- `docs/rust-guidelines.md` — Rust conventions and architecture rationale
+- `docs/calculations/methodology.md` — calculation formulas and assumptions (`#CALC_*` tags)
+- `docs/auth.md` — authentication and authorization design
 
 ### Working Notes (`working_docs/`)
 

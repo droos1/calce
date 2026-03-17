@@ -123,7 +123,7 @@ mod tests {
     use crate::domain::instrument::InstrumentId;
     use crate::domain::price::Price;
     use crate::error::CalceError;
-    use crate::services::market_data::InMemoryMarketDataService;
+    use crate::services::test_market_data::TestMarketData;
 
     fn date(year: i32, month: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(year, month, day).unwrap()
@@ -131,7 +131,7 @@ mod tests {
 
     /// Add consecutive daily prices starting from `start`.
     fn add_prices(
-        md: &mut InMemoryMarketDataService,
+        md: &mut TestMarketData,
         instrument: &InstrumentId,
         start: NaiveDate,
         values: &[f64],
@@ -147,12 +147,11 @@ mod tests {
         let inst = InstrumentId::new("CONST");
         let as_of = date(2025, 6, 1);
         let start = date(2025, 1, 1); // 151 days before as_of
-        let mut md = InMemoryMarketDataService::new();
+        let mut md = TestMarketData::new();
 
         // 152 days of the same price
         let prices: Vec<f64> = vec![100.0; 152];
         add_prices(&mut md, &inst, start, &prices);
-        md.freeze();
 
         let result = calculate_volatility(&inst, as_of, 365, &md).unwrap();
 
@@ -169,14 +168,13 @@ mod tests {
         let inst = InstrumentId::new("ALT");
         let as_of = date(2025, 6, 1);
         let start = date(2025, 1, 1);
-        let mut md = InMemoryMarketDataService::new();
+        let mut md = TestMarketData::new();
 
         let mut prices = Vec::new();
         for i in 0..152 {
             prices.push(if i % 2 == 0 { 100.0 } else { 101.0 });
         }
         add_prices(&mut md, &inst, start, &prices);
-        md.freeze();
 
         let result = calculate_volatility(&inst, as_of, 365, &md).unwrap();
 
@@ -191,10 +189,9 @@ mod tests {
     #[test]
     fn fewer_than_three_prices_fails() {
         let inst = InstrumentId::new("LONELY");
-        let mut md = InMemoryMarketDataService::new();
+        let mut md = TestMarketData::new();
         md.add_price(&inst, date(2025, 1, 1), Price::new(100.0));
         md.add_price(&inst, date(2025, 3, 15), Price::new(105.0));
-        md.freeze();
 
         let result = calculate_volatility(&inst, date(2025, 6, 1), 365, &md);
 
@@ -211,11 +208,10 @@ mod tests {
         let inst = InstrumentId::new("NEW");
         let as_of = date(2025, 6, 1);
         let start = date(2025, 5, 10); // only 22 days before as_of
-        let mut md = InMemoryMarketDataService::new();
+        let mut md = TestMarketData::new();
 
         let prices: Vec<f64> = (0..23).map(|i| 100.0 + f64::from(i)).collect();
         add_prices(&mut md, &inst, start, &prices);
-        md.freeze();
 
         let result = calculate_volatility(&inst, as_of, 365, &md);
 
@@ -232,13 +228,12 @@ mod tests {
         let inst = InstrumentId::new("SPARSE");
         let as_of = date(2025, 6, 1);
         let start = date(2025, 1, 1);
-        let mut md = InMemoryMarketDataService::new();
+        let mut md = TestMarketData::new();
 
         // 152 records: only first 20 are valid, rest are zero → 13% completeness
         let mut prices = vec![100.0; 20];
         prices.extend(vec![0.0; 132]);
         add_prices(&mut md, &inst, start, &prices);
-        md.freeze();
 
         let result = calculate_volatility(&inst, as_of, 365, &md);
 
@@ -256,7 +251,7 @@ mod tests {
         let inst = InstrumentId::new("GAPPY");
         let as_of = date(2025, 6, 1);
         let start = date(2025, 1, 1);
-        let mut md = InMemoryMarketDataService::new();
+        let mut md = TestMarketData::new();
 
         // 152 entries: mostly 100.0 with a few zeros sprinkled in (still >80% valid)
         let mut prices = vec![100.0; 152];
@@ -265,7 +260,6 @@ mod tests {
             prices[i] = 0.0;
         }
         add_prices(&mut md, &inst, start, &prices);
-        md.freeze();
 
         let result = calculate_volatility(&inst, as_of, 365, &md).unwrap();
 
@@ -277,8 +271,7 @@ mod tests {
     #[test]
     fn no_prices_in_range_fails() {
         let inst = InstrumentId::new("EMPTY");
-        let mut md = InMemoryMarketDataService::new();
-        md.freeze();
+        let md = TestMarketData::new();
 
         let result = calculate_volatility(&inst, date(2025, 6, 1), 365, &md);
         assert!(result.is_err());

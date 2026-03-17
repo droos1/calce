@@ -8,7 +8,7 @@ use chrono::{Datelike, NaiveDate};
 
 use calce_core::domain::currency::Currency;
 use calce_core::domain::instrument::InstrumentId;
-use calce_core::services::market_data::InMemoryMarketDataService;
+use calce_data::InMemoryMarketDataService;
 
 use types::{CacheMetadata, CachedMarketData};
 

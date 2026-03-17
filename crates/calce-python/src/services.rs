@@ -4,8 +4,8 @@ use pyo3::prelude::*;
 use calce_core::domain::fx_rate::FxRate;
 use calce_core::domain::instrument::InstrumentId;
 use calce_core::domain::price::Price;
-use calce_core::services::market_data::InMemoryMarketDataService;
-use calce_core::services::user_data::InMemoryUserDataService;
+use calce_data::InMemoryMarketDataService;
+use calce_data::InMemoryUserDataService;
 
 use crate::domain::{Currency, Trade};
 

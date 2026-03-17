@@ -13,7 +13,6 @@ pub mod calc;
 pub mod context;
 pub mod domain;
 pub mod error;
-pub mod inputs;
 pub mod outcome;
 pub mod reports;
 pub mod services;

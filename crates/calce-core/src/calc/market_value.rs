@@ -104,7 +104,7 @@ mod tests {
     use crate::domain::currency::Currency;
     use crate::domain::fx_rate::FxRate;
     use crate::domain::quantity::Quantity;
-    use crate::services::market_data::InMemoryMarketDataService;
+    use crate::services::test_market_data::TestMarketData;
     use chrono::NaiveDate;
 
     fn date() -> NaiveDate {
@@ -116,9 +116,8 @@ mod tests {
         let usd = Currency::new("USD");
         let aapl = InstrumentId::new("AAPL");
 
-        let mut market_data = InMemoryMarketDataService::new();
+        let mut market_data = TestMarketData::new();
         market_data.add_price(&aapl, date(), Price::new(150.0));
-        market_data.freeze();
 
         let positions = vec![Position {
             instrument_id: aapl,
@@ -139,10 +138,9 @@ mod tests {
         let sek = Currency::new("SEK");
         let aapl = InstrumentId::new("AAPL");
 
-        let mut market_data = InMemoryMarketDataService::new();
+        let mut market_data = TestMarketData::new();
         market_data.add_price(&aapl, date(), Price::new(150.0));
         market_data.add_fx_rate(FxRate::new(usd, sek, 10.0), date());
-        market_data.freeze();
 
         let positions = vec![Position {
             instrument_id: aapl,
@@ -161,8 +159,7 @@ mod tests {
     fn missing_price_produces_warning_not_error() {
         let usd = Currency::new("USD");
         let aapl = InstrumentId::new("AAPL");
-        let mut market_data = InMemoryMarketDataService::new();
-        market_data.freeze();
+        let market_data = TestMarketData::new();
 
         let positions = vec![Position {
             instrument_id: aapl,
@@ -184,10 +181,9 @@ mod tests {
         let aapl = InstrumentId::new("AAPL");
         let msft = InstrumentId::new("MSFT");
 
-        let mut market_data = InMemoryMarketDataService::new();
+        let mut market_data = TestMarketData::new();
         // Only AAPL has a price; MSFT is missing
         market_data.add_price(&aapl, date(), Price::new(150.0));
-        market_data.freeze();
 
         let positions = vec![
             Position {
@@ -213,8 +209,8 @@ mod tests {
     #[test]
     fn empty_positions_returns_zero() {
         let sek = Currency::new("SEK");
-        let mut market_data = InMemoryMarketDataService::new();
-        market_data.freeze();
+        let market_data = TestMarketData::new();
+
         let ctx = CalculationContext::new(sek, date());
 
         let outcome = value_positions(&[], &ctx, &market_data).expect("should succeed");

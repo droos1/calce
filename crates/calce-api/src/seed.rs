@@ -6,8 +6,8 @@ use calce_core::domain::price::Price;
 use calce_core::domain::quantity::Quantity;
 use calce_core::domain::trade::Trade;
 use calce_core::domain::user::UserId;
-use calce_core::services::market_data::InMemoryMarketDataService;
-use calce_core::services::user_data::InMemoryUserDataService;
+use calce_data::InMemoryMarketDataService;
+use calce_data::InMemoryUserDataService;
 use chrono::{Datelike, NaiveDate};
 
 fn date(y: i32, m: u32, d: u32) -> NaiveDate {

@@ -10,7 +10,10 @@ use calce_core::domain::currency::Currency;
 use calce_core::domain::instrument::InstrumentId;
 use calce_core::domain::user::UserId;
 use calce_core::reports::portfolio::PortfolioReport;
-use calce_data::service::{CalcInputSpec, DataStats, DateRange, InstrumentSummary, UserSummary};
+use calce_core::services::market_data::MarketDataService;
+use calce_data::market_data_store::InstrumentSummary;
+use calce_data::types::DataStats;
+use calce_data::user_data_store::UserSummary;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
@@ -66,18 +69,11 @@ async fn market_value(
     let ctx = CalculationContext::new(base_currency, params.as_of_date);
     let user_id = UserId::new(user_id);
 
-    let spec = CalcInputSpec {
-        subjects: vec![user_id],
-        base_currency,
-        date_range: DateRange {
-            from: params.as_of_date,
-            to: params.as_of_date,
-        },
-    };
-    let inputs = state.data.load_calc_inputs(&security_ctx, &spec)?;
+    let trades = state.user_data.load_trades(&security_ctx, &[user_id])?;
+    let market_data = state.market_data.market_data();
 
-    let positions = aggregation::aggregate_positions(&inputs.trades, ctx.as_of_date)?;
-    let outcome = market_value::value_positions(&positions, &ctx, &*inputs.market_data)?;
+    let positions = aggregation::aggregate_positions(&trades, ctx.as_of_date)?;
+    let outcome = market_value::value_positions(&positions, &ctx, &*market_data)?;
     // TODO: surface outcome.warnings in response headers or a wrapper
     Ok(Json(outcome.value))
 }
@@ -92,21 +88,13 @@ async fn portfolio_report(
     let ctx = CalculationContext::new(base_currency, params.as_of_date);
     let user_id = UserId::new(user_id);
 
-    // Portfolio report needs price history going back ~400 days for value changes
-    let spec = CalcInputSpec {
-        subjects: vec![user_id],
-        base_currency,
-        date_range: DateRange {
-            from: params.as_of_date - chrono::Days::new(400),
-            to: params.as_of_date,
-        },
-    };
-    let inputs = state.data.load_calc_inputs(&security_ctx, &spec)?;
+    let trades = state.user_data.load_trades(&security_ctx, &[user_id])?;
+    let market_data = state.market_data.market_data();
 
     let outcome = calce_core::reports::portfolio::portfolio_report(
-        &inputs.trades,
+        &trades,
         &ctx,
-        &*inputs.market_data,
+        &*market_data,
     )?;
     // TODO: surface outcome.warnings in response headers or a wrapper
     Ok(Json(outcome.value))
@@ -119,7 +107,7 @@ async fn volatility(
     Query(params): Query<VolatilityParams>,
 ) -> Result<Json<VolatilityResult>, ApiError> {
     let instrument = InstrumentId::new(instrument_id);
-    let md = state.data.load_market_data();
+    let md = state.market_data.market_data();
     let result = volatility::calculate_volatility(
         &instrument,
         params.as_of_date,
@@ -135,21 +123,28 @@ async fn data_stats(
     Auth(_ctx): Auth,
     State(state): State<AppState>,
 ) -> Result<Json<DataStats>, ApiError> {
-    Ok(Json(state.data.data_stats()))
+    let stats = DataStats {
+        user_count: state.user_data.user_count(),
+        instrument_count: state.market_data.instrument_count(),
+        trade_count: state.user_data.trade_count(),
+        price_count: state.market_data.price_count(),
+        fx_rate_count: state.market_data.fx_rate_count(),
+    };
+    Ok(Json(stats))
 }
 
 async fn data_users(
     Auth(ctx): Auth,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<UserSummary>>, ApiError> {
-    Ok(Json(state.data.list_users(&ctx)))
+    Ok(Json(state.user_data.list_users(&ctx)))
 }
 
 async fn data_instruments(
     Auth(_ctx): Auth,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<InstrumentSummary>>, ApiError> {
-    Ok(Json(state.data.list_instruments()))
+    Ok(Json(state.market_data.list_instruments()))
 }
 
 #[derive(Deserialize)]
@@ -171,12 +166,14 @@ async fn instrument_prices(
     Query(params): Query<PriceHistoryParams>,
 ) -> Result<Json<Vec<PricePoint>>, ApiError> {
     let instrument = InstrumentId::new(instrument_id);
-    let history = state
-        .data
-        .price_history(&instrument, params.from, params.to)?;
+    let md = state.market_data.market_data();
+    let history = md.get_price_history(&instrument, params.from, params.to)?;
     let points: Vec<PricePoint> = history
         .into_iter()
-        .map(|(date, price)| PricePoint { date, price })
+        .map(|(date, price)| PricePoint {
+            date,
+            price: price.value(),
+        })
         .collect();
     Ok(Json(points))
 }

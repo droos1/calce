@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
-use crate::domain::trade::Trade;
-use crate::domain::user::UserId;
+use calce_core::domain::trade::Trade;
+use calce_core::domain::user::UserId;
 
-/// In-memory user data store for testing.
 #[derive(Default)]
 pub struct InMemoryUserDataService {
     trades: HashMap<UserId, Vec<Trade>>,

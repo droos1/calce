@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::routing::get;
-use calce_data::service::DataService;
+use calce_data::loader;
+use calce_data::market_data_store::MarketDataStore;
+use calce_data::user_data_store::UserDataStore;
 use sqlx::PgPool;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
@@ -28,7 +30,7 @@ fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-async fn create_postgres_service() -> (DataService, PgPool) {
+async fn create_postgres_service() -> (MarketDataStore, UserDataStore, PgPool) {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://calce:calce@localhost:5433/calce".into());
 
@@ -42,17 +44,16 @@ async fn create_postgres_service() -> (DataService, PgPool) {
         .expect("failed to run migrations");
 
     tracing::info!("Backend: postgres ({database_url})");
-    let service = DataService::from_postgres(&pool)
+    let (market_data, user_data) = loader::load_from_postgres(&pool)
         .await
         .expect("failed to bulk-load data");
-    (service, pool)
+    (market_data, user_data, pool)
 }
 
 #[cfg(feature = "njorda")]
-fn create_njorda_cache_service() -> DataService {
+fn create_njorda_cache_service() -> MarketDataStore {
     use std::time::Instant;
 
-    use calce_core::services::user_data::InMemoryUserDataService;
     use calce_integrations::njorda::{self, cache};
 
     let cache_path = cache::cache_path();
@@ -73,7 +74,7 @@ fn create_njorda_cache_service() -> DataService {
                     market_data.fx_rate_count(),
                     mem_mb,
                 );
-                return DataService::from_memory(market_data, InMemoryUserDataService::new());
+                return MarketDataStore::from_memory(market_data);
             }
             Err(e) => {
                 tracing::warn!("Service cache invalid, rebuilding: {e}");
@@ -133,11 +134,11 @@ fn create_njorda_cache_service() -> DataService {
         cached.metadata.fetched_at.format("%Y-%m-%d %H:%M UTC"),
     );
 
-    DataService::from_memory(market_data, InMemoryUserDataService::new())
+    MarketDataStore::from_memory(market_data)
 }
 
 #[cfg(not(feature = "njorda"))]
-fn create_njorda_cache_service() -> DataService {
+fn create_njorda_cache_service() -> MarketDataStore {
     eprintln!("Error: njorda-cache backend requires the 'njorda' feature.");
     eprintln!("Build with: cargo run -p calce-api --features njorda");
     eprintln!("Or use: invoke run-api --njorda");
@@ -152,12 +153,16 @@ async fn main() {
 
     let backend = std::env::var("CALCE_BACKEND").unwrap_or_else(|_| "postgres".into());
 
-    let (data, pool) = match backend.as_str() {
+    let (market_data, user_data, pool) = match backend.as_str() {
         "postgres" => {
-            let (data, pool) = create_postgres_service().await;
-            (data, Some(pool))
+            let (md, ud, pool) = create_postgres_service().await;
+            (md, ud, Some(pool))
         }
-        "njorda-cache" => (create_njorda_cache_service(), None),
+        "njorda-cache" => {
+            let md = create_njorda_cache_service();
+            let ud = UserDataStore::from_memory(calce_data::InMemoryUserDataService::new());
+            (md, ud, None)
+        }
         other => {
             eprintln!("Unknown CALCE_BACKEND: {other}");
             eprintln!("Options: postgres (default), njorda-cache");
@@ -166,7 +171,8 @@ async fn main() {
     };
 
     let state = AppState {
-        data: Arc::new(data),
+        market_data: Arc::new(market_data),
+        user_data: Arc::new(user_data),
         pool,
     };
 
@@ -192,9 +198,11 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_state() -> AppState {
-        let data = DataService::from_memory(seed::seed_market_data(), seed::seed_user_data());
+        let market_data = MarketDataStore::from_memory(seed::seed_market_data());
+        let user_data = UserDataStore::from_memory(seed::seed_user_data());
         AppState {
-            data: Arc::new(data),
+            market_data: Arc::new(market_data),
+            user_data: Arc::new(user_data),
             pool: None,
         }
     }

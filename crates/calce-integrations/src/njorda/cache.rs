@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use chrono::Datelike;
 
-use calce_core::services::market_data::InMemoryMarketDataService;
+use calce_data::InMemoryMarketDataService;
 
 use super::NjordaError;
 use super::types::{CacheMetadata, CachedFxRate, CachedInstrument, CachedMarketData, CachedPrice};

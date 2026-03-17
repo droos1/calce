@@ -353,6 +353,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "calce-core",
+ "calce-data",
  "chrono",
  "clap",
  "lz4_flex",
@@ -370,6 +371,7 @@ name = "calce-python"
 version = "0.1.0"
 dependencies = [
  "calce-core",
+ "calce-data",
  "chrono",
  "pyo3",
 ]
