@@ -304,7 +304,7 @@ def main():
     cur = conn.cursor()
 
     print("Truncating tables...")
-    cur.execute("TRUNCATE trades, accounts, users, prices, fx_rates, instruments RESTART IDENTITY CASCADE")
+    cur.execute("TRUNCATE trades, accounts, users, organizations, prices, fx_rates, instruments RESTART IDENTITY CASCADE")
 
     def timed_insert(label, sql, rows, page_size=5000):
         t = time.time()

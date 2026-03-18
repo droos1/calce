@@ -20,6 +20,18 @@ class Base(DeclarativeBase):
     pass
 
 
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
+    external_id = Column(String(64), unique=True, nullable=False)
+    name = Column(String(200))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    users = relationship("User", back_populates="organization")
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -27,9 +39,11 @@ class User(Base):
     external_id = Column(String(64), unique=True, nullable=False)
     email = Column(String(255))
     name = Column(String(200))
+    organization_id = Column(BigInteger, ForeignKey("organizations.id"))
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
+    organization = relationship("Organization", back_populates="users")
     accounts = relationship("Account", back_populates="user")
     trades = relationship("Trade", back_populates="user")
 

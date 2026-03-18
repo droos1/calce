@@ -121,6 +121,22 @@ def seed_db(c, instruments=1000, users=100, trades_per_user=100, history_years=5
 
 
 @task
+def njorda_import(c, from_date="2023-01-01", to_date="", dry_run=False):
+    """Import real data from njorda dev DB into local calce DB.
+
+    Requires: Cloud SQL Proxy running (invoke njorda-proxy).
+    Passwords are auto-decrypted from SOPS (or set NJORDA_DB_PASSWORD / NJORDA_API_DB_PASSWORD).
+    """
+    to_flag = f" --to-date {to_date}" if to_date else ""
+    dry = " --dry-run" if dry_run else ""
+    c.run(
+        f"uv run --with psycopg2-binary tools/njorda_import.py"
+        f" --from-date {from_date}{to_flag}{dry}",
+        pty=True,
+    )
+
+
+@task
 def njorda_proxy(c):
     """Start Cloud SQL Proxy for njorda dev DB (port 22020)."""
     c.run(

@@ -335,7 +335,8 @@ mod tests {
 
         let (status, body) = get("/v1/data/instruments", &auth_headers()).await;
         assert_eq!(status, StatusCode::OK);
-        assert!(body.as_array().is_some());
+        assert!(body["items"].as_array().is_some());
+        assert!(body["total"].is_number());
     }
 
     #[tokio::test]

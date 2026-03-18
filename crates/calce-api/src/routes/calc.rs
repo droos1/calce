@@ -17,6 +17,8 @@ use calce_data::user_data_store::UserSummary;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
+const DEFAULT_PAGE_SIZE: usize = 50;
+
 use crate::auth::Auth;
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -129,18 +131,94 @@ async fn data_stats(
     Ok(Json(stats))
 }
 
+#[derive(Deserialize)]
+struct PaginationParams {
+    #[serde(default)]
+    offset: usize,
+    #[serde(default = "default_page_size")]
+    limit: usize,
+    #[serde(default)]
+    search: Option<String>,
+}
+
+fn default_page_size() -> usize {
+    DEFAULT_PAGE_SIZE
+}
+
+#[derive(Serialize)]
+struct PaginatedResponse<T: Serialize> {
+    items: Vec<T>,
+    total: usize,
+    offset: usize,
+    limit: usize,
+}
+
 async fn data_users(
     Auth(ctx): Auth,
     State(state): State<AppState>,
-) -> Result<Json<Vec<UserSummary>>, ApiError> {
-    Ok(Json(state.user_data.list_users(&ctx)))
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<UserSummary>>, ApiError> {
+    let all = state.user_data.list_users(&ctx);
+    let filtered: Vec<_> = if let Some(ref q) = params.search {
+        let q = q.to_lowercase();
+        all.into_iter()
+            .filter(|u| {
+                u.id.to_lowercase().contains(&q)
+                    || u.email.as_deref().unwrap_or("").to_lowercase().contains(&q)
+            })
+            .collect()
+    } else {
+        all
+    };
+    let total = filtered.len();
+    let items = filtered
+        .into_iter()
+        .skip(params.offset)
+        .take(params.limit)
+        .collect();
+    Ok(Json(PaginatedResponse {
+        items,
+        total,
+        offset: params.offset,
+        limit: params.limit,
+    }))
 }
 
 async fn data_instruments(
     Auth(_ctx): Auth,
     State(state): State<AppState>,
-) -> Result<Json<Vec<InstrumentSummary>>, ApiError> {
-    Ok(Json(state.market_data.list_instruments()))
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<InstrumentSummary>>, ApiError> {
+    let all = state.market_data.list_instruments();
+    let filtered: Vec<_> = if let Some(ref q) = params.search {
+        let q = q.to_lowercase();
+        all.into_iter()
+            .filter(|i| {
+                i.id.to_lowercase().contains(&q)
+                    || i.name
+                        .as_deref()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(&q)
+                    || i.instrument_type.to_lowercase().contains(&q)
+                    || i.currency.to_lowercase().contains(&q)
+            })
+            .collect()
+    } else {
+        all
+    };
+    let total = filtered.len();
+    let items = filtered
+        .into_iter()
+        .skip(params.offset)
+        .take(params.limit)
+        .collect();
+    Ok(Json(PaginatedResponse {
+        items,
+        total,
+        offset: params.offset,
+        limit: params.limit,
+    }))
 }
 
 #[derive(Deserialize)]
