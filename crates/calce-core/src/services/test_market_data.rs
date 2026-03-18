@@ -19,6 +19,7 @@ pub struct TestMarketData {
     prices: HashMap<(InstrumentId, NaiveDate), f64>,
     fx_rates: HashMap<(Currency, Currency, NaiveDate), f64>,
     instrument_types: HashMap<InstrumentId, InstrumentType>,
+    allocations: HashMap<(InstrumentId, String), Vec<(String, f64)>>,
 }
 
 impl TestMarketData {
@@ -43,6 +44,19 @@ impl TestMarketData {
     ) {
         self.instrument_types
             .insert(instrument.clone(), instrument_type);
+    }
+
+    pub fn add_allocation(
+        &mut self,
+        instrument: &InstrumentId,
+        dimension: &str,
+        key: &str,
+        weight: f64,
+    ) {
+        self.allocations
+            .entry((instrument.clone(), dimension.to_owned()))
+            .or_default()
+            .push((key.to_owned(), weight));
     }
 }
 
@@ -94,6 +108,13 @@ impl MarketDataService for TestMarketData {
         self.instrument_types
             .get(instrument)
             .copied()
+            .unwrap_or_default()
+    }
+
+    fn get_allocations(&self, instrument: &InstrumentId, dimension: &str) -> Vec<(String, f64)> {
+        self.allocations
+            .get(&(instrument.clone(), dimension.to_owned()))
+            .cloned()
             .unwrap_or_default()
     }
 }

@@ -120,12 +120,13 @@ Result:
     PortfolioReport {
         market_value:      MarketValueResult,    // positions + total
         value_changes:     ValueChangeSummary,   // daily/weekly/yearly/YTD
-        type_allocation:   TypeAllocation,        // breakdown by instrument type (#CALC_ALLOC)
+        type_allocation:   TypeAllocation,        // breakdown by instrument type (#CALC_ALLOC_INSTYPE)
+        sector_allocation: AllocationResult,      // breakdown by GICS sector (#CALC_ALLOC_SECTOR)
     }
 
 ---
 
-### 4.5 Type Allocation `#CALC_ALLOC`
+### 4.5 Type Allocation `#CALC_ALLOC_INSTYPE`
 
 Groups portfolio positions by instrument type and computes each type's share of
 total portfolio value. Operates on the output of `#CALC_MV` and resolves
@@ -159,7 +160,94 @@ exposure or separate long/short buckets are needed, this should be extended.
 
 ---
 
-### 4.6 Volatility `#CALC_VOL`
+### 4.6 Weighted Allocation `#CALC_ALLOC_WEIGHTED`
+
+Generic engine for computing portfolio allocation across any weighted
+classification dimension (sector, geography, asset class, etc.).
+
+Unlike instrument type allocation (`#CALC_ALLOC_INSTYPE`), which assigns each
+instrument a single label, weighted allocation supports instruments that span
+multiple categories. A stock has a single sector at weight 1.0, but a mutual
+fund or ETF distributes across many sectors (e.g. 30% Information Technology,
+13% Health Care). This achieves look-through allocation without requiring
+explicit fund holdings data.
+
+**Inputs:**
+
+- `positions` — valued positions from `#CALC_MV`
+- `total` — portfolio total in base currency
+- `dimension` — the classification dimension (e.g. "sector", "geography")
+- `get_weights` — function returning allocation weights per instrument:
+  `instrument → [(category, weight)]`
+
+**Allocation weights** are stored per instrument as `{category: weight}` maps.
+Stocks typically have one entry at weight 1.0. Funds have multiple entries that
+should sum to approximately 1.0 (may be less due to cash drag or rounding).
+
+**Computation:**
+
+For each position P with market value V (in base currency):
+
+    weights = get_weights(P.instrument_id)
+    for each (category, w) in weights:
+        attributed_value(category) += V * w
+
+Then for each category C:
+
+    total_value(C) = sum of attributed_value(C) across all positions
+    portfolio_weight(C) = total_value(C) / total
+
+Result entries are sorted by descending portfolio weight.
+
+**Edge cases:**
+
+- Instrument with no allocation data for the dimension → maps to
+  "Uncategorized" with weight 1.0.
+- Allocation weights that sum to less than 1.0 → the unallocated portion is
+  silently lost (not attributed to any category). This is intentional: cash
+  drag and rounding gaps should not inflate any category.
+- Allocation weights that sum to more than 1.0 → the excess is passed through.
+  The data provider is responsible for normalization.
+- When total market value is zero, all portfolio weights are zero.
+- Short positions distribute negative value across categories, same as
+  `#CALC_ALLOC_INSTYPE`.
+
+**Result:**
+
+    AllocationResult {
+        dimension: String,
+        entries: Vec<AllocationEntry>,   // sorted by descending weight
+        total: Money,
+    }
+
+    AllocationEntry {
+        key: String,           // category name (e.g. "Information Technology")
+        market_value: Money,   // value attributed to this category
+        weight: f64,           // fraction of total portfolio
+    }
+
+---
+
+### 4.7 Sector Allocation `#CALC_ALLOC_SECTOR`
+
+Portfolio allocation by GICS sector, computed via `#CALC_ALLOC_WEIGHTED` with
+dimension = "sector".
+
+Reads per-instrument sector weights from market data metadata. Stocks are
+assigned a single GICS sector at weight 1.0. Funds and ETFs carry a
+multi-sector breakdown reflecting their underlying holdings.
+
+**GICS top-level sectors** (11, per MSCI/S&P standard): Communication Services,
+Consumer Discretionary, Consumer Staples, Energy, Financials, Health Care,
+Industrials, Information Technology, Materials, Real Estate, Utilities.
+
+Sector names are free-form strings (not an enum) to accommodate different
+classification providers (GICS, ICB, Morningstar). The calculation does not
+validate sector names.
+
+---
+
+### 4.8 Volatility `#CALC_VOL`
 
 Historical realized volatility for a single instrument, computed as the
 annualized standard deviation of logarithmic daily returns.

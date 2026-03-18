@@ -42,6 +42,22 @@ pub(crate) fn seed_market_data() -> InMemoryMarketDataService {
     svc.add_instrument_type(&vow3, InstrumentType::Stock);
     svc.add_instrument_type(&spy, InstrumentType::Etf);
 
+    // Sector allocations
+    svc.add_allocation(&aapl, "sector", "Information Technology", 1.0);
+    svc.add_allocation(&vow3, "sector", "Consumer Discretionary", 1.0);
+    // SPY is a broad market ETF — approximate GICS sector breakdown
+    svc.add_allocation(&spy, "sector", "Information Technology", 0.30);
+    svc.add_allocation(&spy, "sector", "Health Care", 0.13);
+    svc.add_allocation(&spy, "sector", "Financials", 0.12);
+    svc.add_allocation(&spy, "sector", "Consumer Discretionary", 0.10);
+    svc.add_allocation(&spy, "sector", "Industrials", 0.09);
+    svc.add_allocation(&spy, "sector", "Communication Services", 0.09);
+    svc.add_allocation(&spy, "sector", "Consumer Staples", 0.06);
+    svc.add_allocation(&spy, "sector", "Energy", 0.04);
+    svc.add_allocation(&spy, "sector", "Utilities", 0.03);
+    svc.add_allocation(&spy, "sector", "Real Estate", 0.02);
+    svc.add_allocation(&spy, "sector", "Materials", 0.02);
+
     svc.freeze();
     svc
 }

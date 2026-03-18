@@ -341,6 +341,7 @@ dependencies = [
  "calce-core",
  "chrono",
  "serde",
+ "serde_json",
  "sqlx",
  "thiserror",
  "tokio",

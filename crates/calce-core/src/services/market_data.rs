@@ -33,4 +33,16 @@ pub trait MarketDataService: Send + Sync {
     fn get_instrument_type(&self, _instrument: &InstrumentId) -> InstrumentType {
         InstrumentType::Other
     }
+
+    /// Returns allocation weights for an instrument in a given dimension.
+    ///
+    /// For example, dimension "sector" might return
+    /// `[("Information Technology", 0.30), ("Health Care", 0.13)]` for an ETF,
+    /// or `[("Information Technology", 1.0)]` for a single-sector stock.
+    ///
+    /// Returns an empty vec if no allocation data is available (the caller
+    /// should treat this as "Uncategorized" at weight 1.0).
+    fn get_allocations(&self, _instrument: &InstrumentId, _dimension: &str) -> Vec<(String, f64)> {
+        Vec::new()
+    }
 }

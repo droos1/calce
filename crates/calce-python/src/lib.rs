@@ -27,6 +27,8 @@ fn calce(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<results::ValueChangeSummary>()?;
     m.add_class::<results::TypeAllocationEntry>()?;
     m.add_class::<results::TypeAllocation>()?;
+    m.add_class::<results::AllocationEntry>()?;
+    m.add_class::<results::AllocationResult>()?;
     m.add_class::<results::PortfolioReport>()?;
     m.add_class::<results::VolatilityResult>()?;
 

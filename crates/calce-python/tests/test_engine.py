@@ -153,3 +153,46 @@ class TestPortfolioReport:
         total_weight = sum(e.weight for e in alloc.entries)
         assert abs(total_weight - 1.0) < 1e-10
 
+    def test_sector_allocation_with_fund_lookthrough(self):
+        usd = calce.Currency("USD")
+        sek = calce.Currency("SEK")
+        today = date(2025, 3, 15)
+        trade_date = date(2024, 1, 1)
+
+        md = calce.MarketData()
+        md.add_price("AAPL", today, 200.0)
+        md.add_price("SPY", today, 500.0)
+        for d in [today, date(2025, 3, 14), date(2025, 3, 8), date(2024, 3, 15), date(2024, 12, 31)]:
+            md.add_price("AAPL", d, 200.0)
+            md.add_price("SPY", d, 500.0)
+            md.add_fx_rate(usd, sek, 10.0, d)
+        md.add_instrument_type("AAPL", "stock")
+        md.add_instrument_type("SPY", "etf")
+        # AAPL: 100% Info Tech
+        md.add_allocation("AAPL", "sector", "Information Technology", 1.0)
+        # SPY: multi-sector
+        md.add_allocation("SPY", "sector", "Information Technology", 0.6)
+        md.add_allocation("SPY", "sector", "Health Care", 0.4)
+
+        ud = calce.UserData()
+        ud.add_trade(calce.Trade("alice", 1, "AAPL", 100.0, 150.0, usd, trade_date))
+        ud.add_trade(calce.Trade("alice", 1, "SPY", 10.0, 480.0, usd, trade_date))
+
+        engine = calce.CalcEngine(sek, today, "alice", md, ud)
+        report = engine.portfolio_report()
+
+        alloc = report.sector_allocation
+        assert alloc.dimension == "sector"
+
+        # AAPL: 100 * 200 * 10 = 200,000 SEK → 100% Info Tech = 200,000
+        # SPY:  10 * 500 * 10 = 50,000 SEK → 60% Info Tech = 30,000, 40% Health Care = 20,000
+        # Info Tech total: 200,000 + 30,000 = 230,000 / 250,000 = 0.92
+        # Health Care total: 20,000 / 250,000 = 0.08
+        entries = {e.key: e for e in alloc.entries}
+        assert "Information Technology" in entries
+        assert abs(entries["Information Technology"].market_value.amount - 230_000.0) < 1e-6
+        assert abs(entries["Information Technology"].weight - 0.92) < 1e-6
+        assert "Health Care" in entries
+        assert abs(entries["Health Care"].market_value.amount - 20_000.0) < 1e-6
+        assert abs(entries["Health Care"].weight - 0.08) < 1e-6
+

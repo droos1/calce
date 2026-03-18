@@ -261,6 +261,76 @@ impl TypeAllocation {
 }
 
 #[pyclass(frozen)]
+pub struct AllocationEntry {
+    pub inner: calce_core::calc::allocation::AllocationEntry,
+}
+
+#[pymethods]
+impl AllocationEntry {
+    #[getter]
+    fn key(&self) -> &str {
+        &self.inner.key
+    }
+
+    #[getter]
+    fn market_value(&self) -> Money {
+        Money {
+            inner: self.inner.market_value,
+        }
+    }
+
+    #[getter]
+    fn weight(&self) -> f64 {
+        self.inner.weight
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AllocationEntry(key=\"{}\", value={}, weight={:.4})",
+            self.inner.key, self.inner.market_value, self.inner.weight,
+        )
+    }
+}
+
+#[pyclass(frozen)]
+pub struct AllocationResult {
+    pub inner: calce_core::calc::allocation::AllocationResult,
+}
+
+#[pymethods]
+impl AllocationResult {
+    #[getter]
+    fn dimension(&self) -> &str {
+        &self.inner.dimension
+    }
+
+    #[getter]
+    fn entries(&self) -> Vec<AllocationEntry> {
+        self.inner
+            .entries
+            .iter()
+            .map(|e| AllocationEntry { inner: e.clone() })
+            .collect()
+    }
+
+    #[getter]
+    fn total(&self) -> Money {
+        Money {
+            inner: self.inner.total,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "AllocationResult(dimension=\"{}\", entries={}, total={})",
+            self.inner.dimension,
+            self.inner.entries.len(),
+            self.inner.total,
+        )
+    }
+}
+
+#[pyclass(frozen)]
 pub struct PortfolioReport {
     pub inner: calce_core::reports::portfolio::PortfolioReport,
 }
@@ -314,6 +384,13 @@ impl PortfolioReport {
     fn type_allocation(&self) -> TypeAllocation {
         TypeAllocation {
             inner: self.inner.type_allocation.clone(),
+        }
+    }
+
+    #[getter]
+    fn sector_allocation(&self) -> AllocationResult {
+        AllocationResult {
+            inner: self.inner.sector_allocation.clone(),
         }
     }
 

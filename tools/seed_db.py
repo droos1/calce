@@ -2,6 +2,7 @@
 """Seed the Calce database with realistic test data."""
 
 import argparse
+import json
 import math
 import random
 import string
@@ -21,6 +22,17 @@ INSTRUMENT_TYPES = [
     "option", "warrant", "structured_product", "future", "other",
 ]
 INSTRUMENT_TYPE_WEIGHTS = [0.40, 0.15, 0.20, 0.10, 0.03, 0.03, 0.02, 0.03, 0.02, 0.02]
+
+# GICS top-level sectors (MSCI/S&P standard)
+GICS_SECTORS = [
+    "Communication Services", "Consumer Discretionary", "Consumer Staples",
+    "Energy", "Financials", "Health Care", "Industrials",
+    "Information Technology", "Materials", "Real Estate", "Utilities",
+]
+GICS_SECTOR_WEIGHTS = [0.09, 0.10, 0.06, 0.04, 0.12, 0.13, 0.09, 0.30, 0.02, 0.02, 0.03]
+
+# Types that get multi-sector breakdowns (funds)
+_FUND_TYPES = {"etf", "mutual_fund"}
 
 # FX pairs with approximate base rates.
 # We generate all cross-pairs so the API can convert between any two currencies.
@@ -78,28 +90,47 @@ def geometric_brownian_motion(
 # --- Data generators ---
 
 
-def gen_instruments(n: int, rng: random.Random) -> list[tuple[str, str, str]]:
-    """Return list of (ticker, currency, instrument_type)."""
+def _gen_sector_allocations(
+    instrument_type: str, rng: random.Random,
+) -> dict[str, dict[str, float]]:
+    """Generate sector allocation weights for an instrument.
+
+    Stocks get a single sector. Funds get a multi-sector breakdown.
+    """
+    if instrument_type in _FUND_TYPES:
+        # Pick 4-8 sectors with random weights, normalized to ~1.0
+        n_sectors = rng.randint(4, 8)
+        sectors = rng.sample(GICS_SECTORS, k=n_sectors)
+        raw = [rng.random() for _ in sectors]
+        total = sum(raw)
+        weights = {s: round(w / total, 4) for s, w in zip(sectors, raw)}
+        return {"sector": weights}
+    # Single-sector instruments (stocks, bonds, etc.)
+    sector = rng.choices(GICS_SECTORS, weights=GICS_SECTOR_WEIGHTS, k=1)[0]
+    return {"sector": {sector: 1.0}}
+
+
+def gen_instruments(n: int, rng: random.Random) -> list[tuple[str, str, str, str]]:
+    """Return list of (ticker, currency, instrument_type, allocations_json)."""
     tickers = generate_tickers(n, rng)
-    return [
-        (
-            t,
-            rng.choices(CURRENCIES, weights=CURRENCY_WEIGHTS, k=1)[0],
-            rng.choices(INSTRUMENT_TYPES, weights=INSTRUMENT_TYPE_WEIGHTS, k=1)[0],
-        )
-        for t in tickers
-    ]
+    result = []
+    for t in tickers:
+        ccy = rng.choices(CURRENCIES, weights=CURRENCY_WEIGHTS, k=1)[0]
+        itype = rng.choices(INSTRUMENT_TYPES, weights=INSTRUMENT_TYPE_WEIGHTS, k=1)[0]
+        alloc = _gen_sector_allocations(itype, rng)
+        result.append((t, ccy, itype, json.dumps(alloc)))
+    return result
 
 
 def gen_prices(
-    instruments: list[tuple[str, str, str]],
+    instruments: list[tuple[str, str, str, str]],
     trading_days: list[date],
     rng: random.Random,
 ) -> list[tuple[str, date, float]]:
     """Generate price history rows: (instrument_id, date, price)."""
     rows: list[tuple[str, date, float]] = []
     n_days = len(trading_days)
-    for ticker, _, _ in instruments:
+    for ticker, _, _, _ in instruments:
         start_price = rng.uniform(10.0, 500.0)
         drift = rng.uniform(-0.05, 0.15)
         vol = rng.uniform(0.15, 0.50)
@@ -153,7 +184,7 @@ def gen_users_and_accounts(
 
 def gen_trades(
     account_map: dict[int, tuple[str, str]],  # db_id -> (user_external_id, currency)
-    instruments: list[tuple[str, str, str]],  # (ticker, ccy, instrument_type)
+    instruments: list[tuple[str, str, str, str]],  # (ticker, ccy, instrument_type, alloc_json)
     price_lookup: dict[tuple[str, date], float],
     trading_days: list[date],
     avg_trades_per_user: int,
@@ -167,10 +198,10 @@ def gen_trades(
 
     # Build instrument lookup by currency
     instr_ccy: dict[str, str] = {}
-    for ticker, ccy, _ in instruments:
+    for ticker, ccy, _, _ in instruments:
         instr_ccy[ticker] = ccy
 
-    all_tickers = [t for t, _, _ in instruments]
+    all_tickers = [t for t, _, _, _ in instruments]
     rows: list[tuple[str, int, str, float, float, str, date]] = []
 
     for user_id, accts in user_accounts.items():
@@ -283,7 +314,7 @@ def main():
 
     timed_insert(
         "instruments",
-        "INSERT INTO instruments (ticker, currency, instrument_type) VALUES %s",
+        "INSERT INTO instruments (ticker, currency, instrument_type, allocations) VALUES %s",
         instruments,
     )
 

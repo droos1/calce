@@ -34,6 +34,8 @@ pub struct InMemoryMarketDataService {
     fx_rates: HashMap<(Currency, Currency), Vec<f64>>,
     #[serde(default)]
     instrument_types: HashMap<InstrumentId, InstrumentType>,
+    #[serde(default)]
+    allocations: HashMap<InstrumentId, HashMap<String, Vec<(String, f64)>>>,
     total_prices: usize,
     total_fx_rates: usize,
     #[serde(skip)]
@@ -48,6 +50,7 @@ impl Default for InMemoryMarketDataService {
             prices: HashMap::new(),
             fx_rates: HashMap::new(),
             instrument_types: HashMap::new(),
+            allocations: HashMap::new(),
             total_prices: 0,
             total_fx_rates: 0,
             pending: Some(PendingData::default()),
@@ -70,6 +73,22 @@ impl InMemoryMarketDataService {
                 .or_default()
                 .push((day_ord(date), price.value()));
         }
+    }
+
+    /// Add an allocation weight for an instrument. Works before and after freeze.
+    pub fn add_allocation(
+        &mut self,
+        instrument: &InstrumentId,
+        dimension: &str,
+        key: &str,
+        weight: f64,
+    ) {
+        self.allocations
+            .entry(instrument.clone())
+            .or_default()
+            .entry(dimension.to_owned())
+            .or_default()
+            .push((key.to_owned(), weight));
     }
 
     /// Set the instrument type. Works before and after freeze.
@@ -194,6 +213,7 @@ impl InMemoryMarketDataService {
             prices,
             fx_rates,
             instrument_types: HashMap::new(),
+            allocations: HashMap::new(),
             total_prices,
             total_fx_rates,
             pending: None,
@@ -225,6 +245,7 @@ impl InMemoryMarketDataService {
             prices,
             fx_rates,
             instrument_types: HashMap::new(),
+            allocations: HashMap::new(),
             total_prices,
             total_fx_rates,
             pending: None,
@@ -362,6 +383,14 @@ impl MarketDataService for InMemoryMarketDataService {
         self.instrument_types
             .get(instrument)
             .copied()
+            .unwrap_or_default()
+    }
+
+    fn get_allocations(&self, instrument: &InstrumentId, dimension: &str) -> Vec<(String, f64)> {
+        self.allocations
+            .get(instrument)
+            .and_then(|dims| dims.get(dimension))
+            .cloned()
             .unwrap_or_default()
     }
 }

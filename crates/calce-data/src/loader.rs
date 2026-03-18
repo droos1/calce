@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use calce_core::domain::instrument::{InstrumentId, InstrumentType};
 
 use crate::error::DataResult;
@@ -36,11 +38,16 @@ pub async fn load_from_postgres(pool: &PgPool) -> DataResult<(MarketDataStore, U
 
     let instruments: Vec<InstrumentSummary> = instruments_raw
         .into_iter()
-        .map(|(id, currency, name, instrument_type)| InstrumentSummary {
-            id,
-            currency,
-            name,
-            instrument_type,
+        .map(|(id, currency, name, instrument_type, alloc_json)| {
+            let allocations: HashMap<String, Vec<(String, f64)>> =
+                parse_allocations_json(&alloc_json);
+            InstrumentSummary {
+                id,
+                currency,
+                name,
+                instrument_type,
+                allocations,
+            }
         })
         .collect();
 
@@ -52,10 +59,13 @@ pub async fn load_from_postgres(pool: &PgPool) -> DataResult<(MarketDataStore, U
         md.add_fx_rate(rate, date);
     }
     for instr in &instruments {
-        md.add_instrument_type(
-            &InstrumentId::new(&instr.id),
-            InstrumentType::from_str_lossy(&instr.instrument_type),
-        );
+        let iid = InstrumentId::new(&instr.id);
+        md.add_instrument_type(&iid, InstrumentType::from_str_lossy(&instr.instrument_type));
+        for (dimension, weights) in &instr.allocations {
+            for (key, weight) in weights {
+                md.add_allocation(&iid, dimension, key, *weight);
+            }
+        }
     }
     md.freeze();
 
@@ -76,4 +86,25 @@ pub async fn load_from_postgres(pool: &PgPool) -> DataResult<(MarketDataStore, U
     let market_store = MarketDataStore::from_parts(md, instruments);
 
     Ok((market_store, ud))
+}
+
+/// Parse the JSONB allocations column into a dimension → weights map.
+///
+/// Expected shape: `{"sector": {"Information Technology": 0.3, "Health Care": 0.13}, ...}`
+fn parse_allocations_json(value: &serde_json::Value) -> HashMap<String, Vec<(String, f64)>> {
+    let mut result = HashMap::new();
+    if let serde_json::Value::Object(dimensions) = value {
+        for (dim, keys_val) in dimensions {
+            if let serde_json::Value::Object(keys) = keys_val {
+                let weights: Vec<(String, f64)> = keys
+                    .iter()
+                    .filter_map(|(k, v)| v.as_f64().map(|w| (k.clone(), w)))
+                    .collect();
+                if !weights.is_empty() {
+                    result.insert(dim.clone(), weights);
+                }
+            }
+        }
+    }
+    result
 }

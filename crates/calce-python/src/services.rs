@@ -48,6 +48,11 @@ impl MarketData {
         );
     }
 
+    fn add_allocation(&mut self, instrument_id: &str, dimension: &str, key: &str, weight: f64) {
+        self.inner
+            .add_allocation(&InstrumentId::new(instrument_id), dimension, key, weight);
+    }
+
     fn freeze(&mut self) {
         self.inner.freeze();
     }

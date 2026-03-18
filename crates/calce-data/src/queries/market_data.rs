@@ -8,6 +8,8 @@ use calce_core::domain::fx_rate::FxRate;
 use calce_core::domain::instrument::InstrumentId;
 use calce_core::domain::price::Price;
 
+use serde_json::Value as JsonValue;
+
 use crate::error::{DataError, DataResult};
 
 fn parse_currency(column: &str, value: String) -> DataResult<Currency> {
@@ -291,9 +293,10 @@ impl MarketDataRepo {
 
     pub async fn list_instruments(
         &self,
-    ) -> DataResult<Vec<(String, String, Option<String>, String)>> {
-        let rows = sqlx::query_as::<_, (String, String, Option<String>, String)>(
-            "SELECT ticker, currency, name, instrument_type FROM instruments ORDER BY ticker",
+    ) -> DataResult<Vec<(String, String, Option<String>, String, JsonValue)>> {
+        let rows = sqlx::query_as::<_, (String, String, Option<String>, String, JsonValue)>(
+            "SELECT ticker, currency, name, instrument_type, allocations \
+             FROM instruments ORDER BY ticker",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -351,14 +354,17 @@ impl MarketDataRepo {
         id: &InstrumentId,
         currency: Currency,
         instrument_type: &str,
+        allocations: Option<&JsonValue>,
     ) -> DataResult<()> {
         sqlx::query(
-            "INSERT INTO instruments (ticker, currency, instrument_type) VALUES ($1, $2, $3) \
+            "INSERT INTO instruments (ticker, currency, instrument_type, allocations) \
+             VALUES ($1, $2, $3, COALESCE($4, '{}')) \
              ON CONFLICT (ticker) DO NOTHING",
         )
         .bind(id.as_str())
         .bind(currency.as_str())
         .bind(instrument_type)
+        .bind(allocations)
         .execute(&self.pool)
         .await?;
         Ok(())

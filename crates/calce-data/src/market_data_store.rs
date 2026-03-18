@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -15,6 +16,8 @@ pub struct InstrumentSummary {
     pub currency: String,
     pub name: Option<String>,
     pub instrument_type: String,
+    #[serde(default)]
+    pub allocations: HashMap<String, Vec<(String, f64)>>,
 }
 
 impl MarketDataStore {
@@ -27,6 +30,7 @@ impl MarketDataStore {
                 currency: String::new(),
                 name: None,
                 instrument_type: "other".to_owned(),
+                allocations: HashMap::new(),
             })
             .collect();
 

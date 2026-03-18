@@ -1,140 +1,294 @@
-# Sector Allocation Plan
+# Weighted Allocation Plan
 
-Add portfolio allocation by sector (`#CALC_ALLOC_SECTOR`), following the same
-pattern as the existing type allocation (`#CALC_ALLOC`).
+Generalize portfolio allocation to support weighted, multi-dimensional
+breakdowns (sector, geography, asset class, etc.) with look-through for funds.
 
-## Context
+## Problem
 
-The old njorda engine supported allocation across 7+ dimensions including sector.
-We start with sector as the next dimension after instrument type. The DB
-currently has **no sector column** — we need a migration and schema change.
+The current `type_allocation` (`#CALC_ALLOC`) assigns each instrument a single
+`InstrumentType` and groups by that. This works because instrument type is
+inherently singular — AAPL is a stock, period.
 
-Sectors are metadata on instruments, like `instrument_type`. The allocation
-calculation itself is structurally identical to type allocation: group positions
-by sector, sum `market_value_base`, compute weights.
+But sector (and geography, asset class, etc.) are different:
+- **Stocks** have a single sector: AAPL = 100% Information Technology
+- **Mutual funds / ETFs** span many sectors: SPY = ~30% Info Tech, ~13%
+  Health Care, ~12% Financials, etc.
+- The same applies to geography, asset class, and other dimensions
 
-## Design Decisions
+A single-label-per-instrument model would force us to label SPY as
+"Uncategorized" or "Diversified", hiding the true portfolio allocation. We need
+**weighted classification**: each instrument carries a `{key: weight}` map per
+dimension.
 
-**Sector as a free-form string, not an enum.** Unlike instrument types (10 fixed
-values), sector taxonomies vary by data provider (GICS has 11, ICB has 11,
-Morningstar has 16, the old njorda engine had 16). Hard-coding an enum would
-couple us to one taxonomy. Instead:
-- Store sector as `Option<String>` on instruments
-- Positions without a sector map to `"Uncategorized"`
-- The allocation function works with `&str` keys, not enum variants
+## Naming
 
-This matches how real portfolio systems handle sectors — the classification
-comes from the data provider and changes over time.
+Use **"allocation"** consistently at all levels:
 
-**Reuse the allocation machinery.** The actual grouping logic is identical to
-type allocation. We could generalize into a single `group_allocation()` function
-that takes a key-extraction closure, then both type and sector allocation become
-thin wrappers. This avoids code duplication and makes adding future dimensions
-(geography, asset class) trivial.
+| Level | Term | Example |
+|-------|------|---------|
+| Per-instrument data | **allocation weights** | AAPL sector = {"Information Technology": 1.0} |
+| Per-instrument storage | **allocations** (JSONB column) | `{"sector": {"Information Technology": 1.0}}` |
+| Trait method | `get_allocations(instrument, dimension)` | Returns `Vec<(String, f64)>` |
+| Portfolio-level result | **allocation** | Sector allocation: 45% Info Tech, 20% Health Care... |
+| Calc tag (existing type) | `#CALC_ALLOC_INSTYPE` | Renamed from `#CALC_ALLOC` |
+| Calc tag (new weighted) | `#CALC_ALLOC_WEIGHTED` | Generic weighted allocation |
+| Calc tag (sector) | `#CALC_ALLOC_SECTOR` | Sector allocation (uses weighted) |
 
-## Phases (per /new-calculation skill)
+Sources: Bloomberg PORT ("sector allocation", "allocation"), Morningstar
+("sector weightings", "asset allocation"), MSCI ("sector allocation").
+
+### Tag rename: `#CALC_ALLOC` → `#CALC_ALLOC_INSTYPE`
+
+The existing type allocation tag is renamed to make room for the family of
+allocation calculations:
+- `#CALC_ALLOC_INSTYPE` — allocation by instrument type (single-label, enum)
+- `#CALC_ALLOC_WEIGHTED` — generic weighted allocation engine
+- `#CALC_ALLOC_SECTOR` — sector allocation (calls weighted engine)
+- Future: `#CALC_ALLOC_GEO`, `#CALC_ALLOC_ASSET_CLASS`, etc.
+
+## Design: unified weighted model
+
+### Every dimension uses `{key: weight}` maps
+
+Instead of special-casing each dimension, every weighted allocation dimension
+uses the same data shape:
+
+```
+instrument allocations:
+  AAPL:
+    sector:      {"Information Technology": 1.0}
+    geography:   {"United States": 1.0}
+    asset_class: {"Equity": 1.0}
+  SPY:
+    sector:      {"Information Technology": 0.30, "Health Care": 0.13, "Financials": 0.12, ...}
+    geography:   {"United States": 0.99, "Other": 0.01}
+    asset_class: {"Equity": 1.0}
+  balanced_fund:
+    sector:      {"Information Technology": 0.20, "Health Care": 0.10, ...}
+    asset_class: {"Equity": 0.65, "Fixed Income": 0.35}
+```
+
+For stocks, the map has one entry at weight 1.0. For funds, it has many entries
+summing to ~1.0 (may not sum to exactly 1.0 due to rounding, cash drag, etc.).
+
+**Instrument type stays as a separate concept.** The `InstrumentType` enum +
+single-label model is correct for type — a fund is always type `Etf` or
+`MutualFund`, regardless of what it holds. Type classification describes what
+the instrument *is*, not what it *contains*. The weighted model is for
+dimensions where an instrument can span multiple categories.
+
+### The calculation is generic
+
+One function handles all weighted dimensions:
+
+```rust
+pub fn weighted_allocation(
+    positions: &[ValuedPosition],
+    total: Money,
+    dimension: &str,
+    get_weights: impl Fn(&InstrumentId) -> Vec<(String, f64)>,
+) -> AllocationResult
+```
+
+For each position, it calls `get_weights` to get the `{key: weight}` map, then
+distributes that position's `market_value_base` across the keys proportionally.
+Results are grouped, summed, and sorted by descending portfolio weight.
+
+Calling it for sector:
+```rust
+let sector_alloc = weighted_allocation(&positions, total, "sector", |id| {
+    market_data.get_allocations(id, "sector")
+});
+```
+
+### Result types
+
+```rust
+pub struct AllocationEntry {
+    pub key: String,           // e.g. "Information Technology"
+    pub market_value: Money,   // value attributed to this key
+    pub weight: f64,           // fraction of total portfolio
+}
+
+pub struct AllocationResult {
+    pub dimension: String,     // e.g. "sector"
+    pub entries: Vec<AllocationEntry>,
+    pub total: Money,
+}
+```
+
+## Data storage: JSONB vs separate table
+
+### Option A: JSONB column on instruments
+
+```sql
+ALTER TABLE instruments ADD COLUMN allocations JSONB DEFAULT '{}';
+
+-- Example row:
+-- allocations = {
+--   "sector": {"Information Technology": 1.0},
+--   "geography": {"United States": 1.0}
+-- }
+```
+
+**Pros:**
+- Simple schema — one column, one read per instrument
+- Flexible — add new dimensions without migrations
+- Natural fit for bulk-load pattern (read all at startup, serve from memory)
+- Easy to serialize/deserialize in Rust via serde
+- Atomic updates per instrument (no partial-write inconsistency)
+
+**Cons:**
+- Can't efficiently query "all instruments with >20% Technology" (needs GIN
+  index + jsonpath)
+- No DB-level constraint that weights sum to ~1.0
+- No referential integrity on dimension/key names (typos go unnoticed)
+- Harder to build reports purely in SQL
+
+### Option B: Separate table
+
+```sql
+CREATE TABLE instrument_allocations (
+    instrument_id BIGINT REFERENCES instruments(id),
+    dimension     VARCHAR(30) NOT NULL,  -- 'sector', 'geography'
+    key           VARCHAR(80) NOT NULL,  -- 'Information Technology', 'United States'
+    weight        DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (instrument_id, dimension, key)
+);
+```
+
+**Pros:**
+- Fully queryable ("all tech-heavy instruments", aggregation in SQL)
+- DB-level constraints possible (CHECK weight BETWEEN 0 AND 1)
+- Normalized — plays well with SQL tooling and reporting
+- Easy to update individual entries without rewriting the whole blob
+
+**Cons:**
+- Many rows per instrument (11 GICS sectors × N instruments)
+- Requires joins when loading instrument data
+- Adding a new dimension means inserting more rows, not just updating a JSON key
+- Slightly more complex bulk load
+
+### Recommendation: JSONB
+
+For our architecture (bulk-load at startup → serve from memory), the JSONB
+column is the better fit:
+
+1. We never query allocations in SQL during normal operation — everything is in
+   the `InMemoryMarketDataService` after startup
+2. The flexibility to add dimensions without migrations is valuable since we
+   have 7+ dimensions ahead
+3. Serde makes JSONB ↔ `HashMap<String, HashMap<String, f64>>` trivial
+4. The old njorda system also used a JSON-style structure for this data
+
+We can always add a GIN index later if SQL-side querying becomes important.
+
+## Plan (per /new-calculation skill)
+
+### Phase 0: Rename `#CALC_ALLOC` → `#CALC_ALLOC_INSTYPE`
+- Update tag in `docs/calculations/methodology.md`
+- Update tag in `calc/allocation.rs` doc comment
+- Grep for any other references
 
 ### Phase 1: Methodology docs
-Write `#CALC_ALLOC_SECTOR` section in `docs/calculations/methodology.md`.
-Consider refactoring the existing `#CALC_ALLOC` docs to reference a shared
-"grouped allocation" concept.
+- Write `#CALC_ALLOC_WEIGHTED` section in `docs/calculations/methodology.md`
+  documenting the generic weighted allocation engine
+- Write `#CALC_ALLOC_SECTOR` section as the first consumer
+- Document the weighted model, the look-through semantics for funds, and edge
+  cases (missing allocations, weights not summing to 1.0)
 
 ### Phase 2: Tests
-- Unit tests in `calc/allocation.rs` for sector allocation
-- Test the generalized grouping function with custom key extractors
-- Integration test with multi-sector portfolio in `tests/integration_test.rs`
+- Unit tests for `weighted_allocation()` in `calc/allocation.rs`:
+  - Single-category instrument (weight map with one entry at 1.0)
+  - Multi-category fund (weights distributed proportionally)
+  - Mixed portfolio: stock + fund overlapping in same category, values combine
+  - Missing allocations → "Uncategorized" bucket
+  - Weights that don't sum to 1.0 (partial allocation, cash drag)
+  - Zero total → zero weights
+- Integration test: portfolio with AAPL (stock, single sector) + SPY (ETF,
+  multi-sector), verify sector allocation reflects look-through
 - Python test for `sector_allocation` on `PortfolioReport`
 
 ### Phase 3: Core implementation
 
-#### 3a. Domain — sector on `MarketDataService`
-- Add `get_sector(&self, instrument: &InstrumentId) -> Option<&str>` default
-  method to `MarketDataService` returning `None`
-- Implement on `TestMarketData` with `HashMap<InstrumentId, String>`
-- Implement on `InMemoryMarketDataService` with `HashMap<InstrumentId, String>`
+#### 3a. Allocation data on `MarketDataService`
+- Add default method to trait:
+  ```rust
+  fn get_allocations(&self, instrument: &InstrumentId, dimension: &str) -> Vec<(String, f64)>
+  ```
+  Default returns empty vec (instrument has no allocation data for this
+  dimension → will map to "Uncategorized").
+- `TestMarketData`: add storage + `add_allocation(instrument, dimension, key,
+  weight)` method, implement override
+- `InMemoryMarketDataService`: same pattern, stored as
+  `HashMap<InstrumentId, HashMap<String, Vec<(String, f64)>>>`, populated from
+  JSONB at load time
 
-#### 3b. Generalize allocation — `calc/allocation.rs`
-Refactor to extract a generic core:
-
-```rust
-pub fn group_allocation<F>(
-    positions: &[ValuedPosition],
-    total: Money,
-    key_fn: F,
-) -> Vec<AllocationEntry<String>>
-where
-    F: Fn(&InstrumentId) -> String,
-```
-
-Then `type_allocation` and `sector_allocation` become:
-```rust
-pub fn type_allocation(...) -> TypeAllocation {
-    // calls group_allocation with |id| market_data.get_instrument_type(id).to_string()
-}
-
-pub fn sector_allocation(...) -> SectorAllocation {
-    // calls group_allocation with |id| market_data.get_sector(id).unwrap_or("Uncategorized")
-}
-```
-
-Existing `TypeAllocation` keeps its typed `InstrumentType` field — the generic
-core returns strings, and `type_allocation` maps back to the enum.
+#### 3b. Generic weighted allocation — `calc/allocation.rs`
+- Add `weighted_allocation()` function
+- Add `AllocationEntry` and `AllocationResult` types
+- Existing `type_allocation()` stays as-is (just tag renamed)
 
 #### 3c. `PortfolioReport`
-- Add `pub sector_allocation: SectorAllocation` field
-- Compute alongside type allocation using the already-available `market_data`
+- Add `pub sector_allocation: AllocationResult` field
+- Compute by calling `weighted_allocation()` with dimension "sector"
+- Future dimensions (geography, asset_class) added the same way
 
 ### Phase 4: Data layer
 
 #### 4a. DB migration
-- Add `sector VARCHAR(50) DEFAULT NULL` to `instruments` table
+- Add `allocations JSONB DEFAULT '{}'` to `instruments` table
 - New Alembic migration in `services/calce-db/`
 
 #### 4b. Queries
-- `list_instruments()` → SELECT `sector` too; return 5-tuple
-- `insert_instrument()` → accept optional `sector` param
+- `list_instruments()` → SELECT `allocations` too
+- `insert_instrument()` → accept optional `allocations` JSONB param
+- Parse JSONB to `HashMap<String, HashMap<String, f64>>` in Rust
 
 #### 4c. Loader
-- Map the sector from `InstrumentSummary` into `md.add_sector()` before freeze
+- Parse allocations JSON per instrument
+- Call `md.add_allocation(instrument, dimension, key, weight)` for each entry
+- Done before `freeze()`
 
 #### 4d. `InstrumentSummary`
-- Add `pub sector: Option<String>`
+- Add `pub allocations: HashMap<String, Vec<(String, f64)>>`
 
 ### Phase 5: Seed data & sanity check
-
-#### 5a. API seed (`seed.rs`)
-- Assign sectors to AAPL ("Technology"), VOW3 ("Consumer Cyclical"), SPY (None —
-  ETFs span sectors)
-- Verify allocation shows in portfolio report
-
-#### 5b. DB seed tool (`seed_db.py`)
-- Add `SECTORS` list with weighted random assignment
-- Update `gen_instruments` to include sector
+- API seed: AAPL sector={"Information Technology": 1.0},
+  VOW3 sector={"Consumer Discretionary": 1.0},
+  SPY sector={"Information Technology": 0.30, "Health Care": 0.13,
+  "Financials": 0.12, "Consumer Discretionary": 0.10, "Industrials": 0.09,
+  "Health Care": 0.08, "Other": 0.18}
+- DB seed tool: assign GICS sectors to stocks (single entry), generate
+  plausible multi-sector breakdowns for instruments typed as ETF/MutualFund
 
 ### Phase 6: Python bindings & API
+- `results.rs`: `AllocationEntry` and `AllocationResult` pyclass wrappers
+- `PortfolioReport`: `sector_allocation` getter
+- `services.rs`: `add_allocation(instrument_id, dimension, key, weight)` on
+  `MarketData`
+- Register new classes in `lib.rs`
 
-#### 6a. Python
-- `results.rs`: Add `SectorAllocationEntry` and `SectorAllocation` pyclass wrappers
-- Add `sector_allocation` getter to `PortfolioReport`
-- `services.rs`: Add `add_sector(instrument_id, sector)` to `MarketData`
-- `lib.rs`: Register new classes
-
-#### 6b. API
-- `PortfolioReport` serde already covers it — no new endpoints needed
-- Sector data appears in the existing portfolio report response
-
-### Phase 7: Tests pass, final verification
-- `invoke check` — formatting, clippy
-- `invoke test` — full suite (Rust + Python)
+### Phase 7: Final verification
+- `invoke check` + `invoke test`
 
 ## What does NOT change
-- `ValuedPosition`, `Position`, `Trade` — sector is instrument metadata
+- `InstrumentType` enum and `type_allocation` — separate concept (what an
+  instrument *is*), only the tag gets renamed
+- `ValuedPosition`, `Position`, `Trade` — allocations are instrument metadata
 - `CalculationContext` — no new parameters
-- Existing `TypeAllocation` API — fully backward compatible
 - `value_change.rs`, `aggregation.rs`, `volatility.rs` — untouched
 
-## Open Questions
-1. Should we generalize allocation now (extracting `group_allocation`) or just
-   copy the pattern from type allocation? Generalizing is cleaner but adds scope.
-2. Sector values: free-form string, or a loose enum with `Other` fallback like
-   `InstrumentType`? Free-form is more flexible but loses type safety.
+## Future dimensions (no code needed now, just same pattern)
+Once sector works, adding more dimensions is just data:
+- **Geography**: {"United States": 0.60, "Europe": 0.25, "Asia": 0.15}
+- **Asset class**: {"Equity": 0.65, "Fixed Income": 0.35}
+- **Currency allocation**: {"USD": 0.70, "EUR": 0.20, "GBP": 0.10}
+- Each becomes one more `AllocationResult` field on `PortfolioReport` and one
+  more call to `weighted_allocation()` with a different dimension string
+
+## GICS top-level sectors (reference)
+For seed data and testing. 11 sectors per the GICS standard (MSCI/S&P):
+Communication Services, Consumer Discretionary, Consumer Staples, Energy,
+Financials, Health Care, Industrials, Information Technology, Materials,
+Real Estate, Utilities
