@@ -24,7 +24,7 @@ class TestMissingPrice:
         # No price added for AAPL
 
         ud = calce.UserData()
-        ud.add_trade(calce.Trade("alice", "acct", "AAPL", 100.0, 145.0, usd, d))
+        ud.add_trade(calce.Trade("alice", 1, "AAPL", 100.0, 145.0, usd, d))
 
         engine = calce.CalcEngine(usd, d, "alice", md, ud)
         result = engine.market_value()

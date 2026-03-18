@@ -289,9 +289,11 @@ impl MarketDataRepo {
             .collect()
     }
 
-    pub async fn list_instruments(&self) -> DataResult<Vec<(String, String, Option<String>)>> {
-        let rows = sqlx::query_as::<_, (String, String, Option<String>)>(
-            "SELECT ticker, currency, name FROM instruments ORDER BY ticker",
+    pub async fn list_instruments(
+        &self,
+    ) -> DataResult<Vec<(String, String, Option<String>, String)>> {
+        let rows = sqlx::query_as::<_, (String, String, Option<String>, String)>(
+            "SELECT ticker, currency, name, instrument_type FROM instruments ORDER BY ticker",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -344,13 +346,19 @@ impl MarketDataRepo {
         Ok(())
     }
 
-    pub async fn insert_instrument(&self, id: &InstrumentId, currency: Currency) -> DataResult<()> {
+    pub async fn insert_instrument(
+        &self,
+        id: &InstrumentId,
+        currency: Currency,
+        instrument_type: &str,
+    ) -> DataResult<()> {
         sqlx::query(
-            "INSERT INTO instruments (ticker, currency) VALUES ($1, $2) \
+            "INSERT INTO instruments (ticker, currency, instrument_type) VALUES ($1, $2, $3) \
              ON CONFLICT (ticker) DO NOTHING",
         )
         .bind(id.as_str())
         .bind(currency.as_str())
+        .bind(instrument_type)
         .execute(&self.pool)
         .await?;
         Ok(())

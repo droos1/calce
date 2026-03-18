@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 use pyo3::prelude::*;
 
 use calce_core::domain::fx_rate::FxRate;
-use calce_core::domain::instrument::InstrumentId;
+use calce_core::domain::instrument::{InstrumentId, InstrumentType};
 use calce_core::domain::price::Price;
 use calce_data::InMemoryMarketDataService;
 use calce_data::user_data_store::UserDataStore;
@@ -38,6 +38,13 @@ impl MarketData {
         self.inner.add_fx_rate(
             FxRate::new(from_currency.inner, to_currency.inner, rate),
             date,
+        );
+    }
+
+    fn add_instrument_type(&mut self, instrument_id: &str, instrument_type: &str) {
+        self.inner.add_instrument_type(
+            &InstrumentId::new(instrument_id),
+            InstrumentType::from_str_lossy(instrument_type),
         );
     }
 

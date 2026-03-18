@@ -14,6 +14,7 @@ pub struct InstrumentSummary {
     pub id: String,
     pub currency: String,
     pub name: Option<String>,
+    pub instrument_type: String,
 }
 
 impl MarketDataStore {
@@ -25,6 +26,7 @@ impl MarketDataStore {
                 id: id.as_str().to_owned(),
                 currency: String::new(),
                 name: None,
+                instrument_type: "other".to_owned(),
             })
             .collect();
 

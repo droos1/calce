@@ -20,10 +20,10 @@ def setup_multi_currency():
 
     ud = calce.UserData()
     # Alice buys 100 AAPL, sells 20 → net 80
-    ud.add_trade(calce.Trade("alice", "alice-usd", "AAPL", 100.0, 145.0, usd, d))
-    ud.add_trade(calce.Trade("alice", "alice-usd", "AAPL", -20.0, 155.0, usd, d))
+    ud.add_trade(calce.Trade("alice", 1, "AAPL", 100.0, 145.0, usd, d))
+    ud.add_trade(calce.Trade("alice", 1, "AAPL", -20.0, 155.0, usd, d))
     # Alice buys 50 VOW3
-    ud.add_trade(calce.Trade("alice", "alice-eur", "VOW3", 50.0, 115.0, eur, d))
+    ud.add_trade(calce.Trade("alice", 2, "VOW3", 50.0, 115.0, eur, d))
 
     return md, ud, sek, d
 
@@ -61,7 +61,7 @@ class TestMarketValue:
         md.add_price("AAPL", d, 150.0)
 
         ud = calce.UserData()
-        ud.add_trade(calce.Trade("alice", "acct", "AAPL", 100.0, 145.0, usd, d))
+        ud.add_trade(calce.Trade("alice", 1, "AAPL", 100.0, 145.0, usd, d))
 
         engine = calce.CalcEngine(usd, d, "alice", md, ud)
         result = engine.market_value()
@@ -87,7 +87,7 @@ class TestPortfolioReport:
             md.add_fx_rate(usd, sek, 10.0, d)
 
         ud = calce.UserData()
-        ud.add_trade(calce.Trade("alice", "acct", "AAPL", 100.0, 150.0, usd, trade_date))
+        ud.add_trade(calce.Trade("alice", 1, "AAPL", 100.0, 150.0, usd, trade_date))
 
         engine = calce.CalcEngine(sek, today, "alice", md, ud)
         report = engine.portfolio_report()
@@ -106,4 +106,50 @@ class TestPortfolioReport:
         # Percentage checks
         assert report.value_changes.daily.change_pct is not None
         assert report.value_changes.yearly.change_pct is not None
+
+        # Type allocation: no types set, so single entry as "other"
+        alloc = report.type_allocation
+        assert len(alloc.entries) == 1
+        assert alloc.entries[0].instrument_type == "other"
+        assert abs(alloc.entries[0].weight - 1.0) < 1e-10
+
+    def test_type_allocation_with_types(self):
+        usd = calce.Currency("USD")
+        sek = calce.Currency("SEK")
+        today = date(2025, 3, 15)
+        trade_date = date(2024, 1, 1)
+
+        md = calce.MarketData()
+        md.add_price("AAPL", today, 200.0)
+        md.add_price("SPY", today, 500.0)
+        for d in [today, date(2025, 3, 14), date(2025, 3, 8), date(2024, 3, 15), date(2024, 12, 31)]:
+            md.add_price("AAPL", d, 200.0)
+            md.add_price("SPY", d, 500.0)
+            md.add_fx_rate(usd, sek, 10.0, d)
+        md.add_instrument_type("AAPL", "stock")
+        md.add_instrument_type("SPY", "etf")
+
+        ud = calce.UserData()
+        ud.add_trade(calce.Trade("alice", 1, "AAPL", 100.0, 150.0, usd, trade_date))
+        ud.add_trade(calce.Trade("alice", 1, "SPY", 10.0, 480.0, usd, trade_date))
+
+        engine = calce.CalcEngine(sek, today, "alice", md, ud)
+        report = engine.portfolio_report()
+
+        alloc = report.type_allocation
+        assert len(alloc.entries) == 2
+
+        # AAPL: 100 * 200 * 10 = 200,000 (stock)
+        # SPY:  10 * 500 * 10 = 50,000 (etf)
+        # Total: 250,000
+        # Stock weight = 200,000 / 250,000 = 0.8
+        # ETF weight = 50,000 / 250,000 = 0.2
+        assert alloc.entries[0].instrument_type == "stock"
+        assert abs(alloc.entries[0].weight - 0.8) < 1e-10
+        assert alloc.entries[1].instrument_type == "etf"
+        assert abs(alloc.entries[1].weight - 0.2) < 1e-10
+
+        # Weights sum to 1.0
+        total_weight = sum(e.weight for e in alloc.entries)
+        assert abs(total_weight - 1.0) < 1e-10
 

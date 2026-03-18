@@ -6,7 +6,7 @@ use calce_core::context::CalculationContext;
 use calce_core::domain::account::AccountId;
 use calce_core::domain::currency::Currency;
 use calce_core::domain::fx_rate::FxRate;
-use calce_core::domain::instrument::InstrumentId;
+use calce_core::domain::instrument::{InstrumentId, InstrumentType};
 use calce_core::domain::price::Price;
 use calce_core::domain::quantity::Quantity;
 use calce_core::domain::trade::Trade;
@@ -24,12 +24,18 @@ fn setup_multi_currency_scenario() -> (TestMarketData, Vec<Trade>, NaiveDate) {
     let sek = Currency::new("SEK");
     let aapl = InstrumentId::new("AAPL");
     let vow3 = InstrumentId::new("VOW3");
+    let spy = InstrumentId::new("SPY");
 
     let mut market_data = TestMarketData::new();
     market_data.add_price(&aapl, date, Price::new(150.0));
     market_data.add_price(&vow3, date, Price::new(120.0));
+    market_data.add_price(&spy, date, Price::new(500.0));
     market_data.add_fx_rate(FxRate::new(usd, sek, 10.5), date);
     market_data.add_fx_rate(FxRate::new(eur, sek, 11.4), date);
+
+    market_data.add_instrument_type(&aapl, InstrumentType::Stock);
+    market_data.add_instrument_type(&vow3, InstrumentType::Stock);
+    market_data.add_instrument_type(&spy, InstrumentType::Etf);
 
     let trades = vec![
         // Alice buys 100 AAPL, sells 20 → net 80
@@ -53,12 +59,22 @@ fn setup_multi_currency_scenario() -> (TestMarketData, Vec<Trade>, NaiveDate) {
         },
         // Alice buys 50 VOW3
         Trade {
-            user_id: alice,
+            user_id: alice.clone(),
             account_id: acct_eur,
             instrument_id: vow3,
             quantity: Quantity::new(50.0),
             price: Price::new(115.0),
             currency: eur,
+            date,
+        },
+        // Alice buys 10 SPY
+        Trade {
+            user_id: alice,
+            account_id: acct_usd,
+            instrument_id: spy,
+            quantity: Quantity::new(10.0),
+            price: Price::new(490.0),
+            currency: usd,
             date,
         },
     ];
@@ -83,9 +99,10 @@ fn multi_currency_portfolio() {
 
     // AAPL: 80 * 150 = 12,000 USD → 12,000 * 10.5 = 126,000 SEK
     // VOW3: 50 * 120 = 6,000 EUR → 6,000 * 11.4 = 68,400 SEK
-    // Total: 126,000 + 68,400 = 194,400 SEK
-    assert_eq!(result.positions.len(), 2);
-    assert_eq!(result.total.amount, 194_400.0);
+    // SPY:  10 * 500 = 5,000 USD → 5,000 * 10.5 = 52,500 SEK
+    // Total: 126,000 + 68,400 + 52,500 = 246,900 SEK
+    assert_eq!(result.positions.len(), 3);
+    assert_eq!(result.total.amount, 246_900.0);
     assert_eq!(result.total.currency, sek);
 
     let aapl_pos = &result.positions[0];
@@ -94,7 +111,13 @@ fn multi_currency_portfolio() {
     assert_eq!(aapl_pos.market_value.amount, 12_000.0);
     assert_eq!(aapl_pos.market_value_base.amount, 126_000.0);
 
-    let vow3_pos = &result.positions[1];
+    let spy_pos = &result.positions[1];
+    assert_eq!(spy_pos.instrument_id.as_str(), "SPY");
+    assert_eq!(spy_pos.quantity.value(), 10.0);
+    assert_eq!(spy_pos.market_value.amount, 5_000.0);
+    assert_eq!(spy_pos.market_value_base.amount, 52_500.0);
+
+    let vow3_pos = &result.positions[2];
     assert_eq!(vow3_pos.instrument_id.as_str(), "VOW3");
     assert_eq!(vow3_pos.quantity.value(), 50.0);
     assert_eq!(vow3_pos.market_value.amount, 6_000.0);
@@ -158,11 +181,13 @@ fn value_positions_multi_currency() {
     let sek = Currency::new("SEK");
     let aapl = InstrumentId::new("AAPL");
     let vow3 = InstrumentId::new("VOW3");
+    let spy = InstrumentId::new("SPY");
     let date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
 
     let mut market_data = TestMarketData::new();
     market_data.add_price(&aapl, date, Price::new(150.0));
     market_data.add_price(&vow3, date, Price::new(120.0));
+    market_data.add_price(&spy, date, Price::new(500.0));
     market_data.add_fx_rate(FxRate::new(usd, sek, 10.5), date);
     market_data.add_fx_rate(FxRate::new(eur, sek, 11.4), date);
 
@@ -177,6 +202,11 @@ fn value_positions_multi_currency() {
             quantity: Quantity::new(50.0),
             currency: eur,
         },
+        calce_core::domain::position::Position {
+            instrument_id: spy,
+            quantity: Quantity::new(10.0),
+            currency: usd,
+        },
     ];
     let ctx = CalculationContext::new(sek, date);
 
@@ -184,7 +214,11 @@ fn value_positions_multi_currency() {
         .unwrap()
         .value;
 
-    assert_eq!(result.total.amount, 194_400.0);
+    // AAPL: 80 * 150 * 10.5 = 126,000
+    // VOW3: 50 * 120 * 11.4 = 68,400
+    // SPY:  10 * 500 * 10.5 = 52,500
+    // Total: 246,900
+    assert_eq!(result.total.amount, 246_900.0);
     assert_eq!(result.total.currency, sek);
 }
 
@@ -287,4 +321,75 @@ fn portfolio_report_integration() {
     assert_eq!(report.value_changes.weekly.change.amount, 10_000.0);
     assert_eq!(report.value_changes.yearly.change.amount, 40_000.0);
     assert_eq!(report.value_changes.ytd.change.amount, 20_000.0);
+
+    // Type allocation: no instrument types set, so all go to Other
+    assert_eq!(report.type_allocation.entries.len(), 1);
+    assert_eq!(
+        report.type_allocation.entries[0].instrument_type,
+        InstrumentType::Other
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Type allocation in portfolio report
+// ---------------------------------------------------------------------------
+
+#[test]
+fn portfolio_report_type_allocation() {
+    let (_market_data, trades, date) = setup_multi_currency_scenario();
+    let sek = Currency::new("SEK");
+
+    // Need value change reference dates
+    let day_ago = date - chrono::Days::new(1);
+    let week_ago = date - chrono::Days::new(7);
+    let year_ago = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+    let prev_year_end = NaiveDate::from_ymd_opt(2024, 12, 31).unwrap();
+
+    // The setup has AAPL/SPY prices on `date` but we need historical prices
+    // for value change. Use a standalone TestMarketData that has everything.
+    let aapl = InstrumentId::new("AAPL");
+    let vow3 = InstrumentId::new("VOW3");
+    let spy = InstrumentId::new("SPY");
+    let usd = Currency::new("USD");
+    let eur = Currency::new("EUR");
+
+    let mut md = TestMarketData::new();
+    md.add_price(&aapl, date, Price::new(150.0));
+    md.add_price(&vow3, date, Price::new(120.0));
+    md.add_price(&spy, date, Price::new(500.0));
+    for d in [date, day_ago, week_ago, year_ago, prev_year_end] {
+        md.add_price(&aapl, d, Price::new(150.0));
+        md.add_price(&vow3, d, Price::new(120.0));
+        md.add_price(&spy, d, Price::new(500.0));
+        md.add_fx_rate(FxRate::new(usd, sek, 10.5), d);
+        md.add_fx_rate(FxRate::new(eur, sek, 11.4), d);
+    }
+    md.add_instrument_type(&aapl, InstrumentType::Stock);
+    md.add_instrument_type(&vow3, InstrumentType::Stock);
+    md.add_instrument_type(&spy, InstrumentType::Etf);
+
+    let ctx = CalculationContext::new(sek, date);
+    let outcome = portfolio_report(&trades, &ctx, &md).expect("report should succeed");
+    let alloc = &outcome.value.type_allocation;
+
+    // AAPL: 80 * 150 * 10.5 = 126,000 SEK (Stock)
+    // VOW3: 50 * 120 * 11.4 = 68,400 SEK  (Stock)
+    // SPY:  10 * 500 * 10.5 = 52,500 SEK  (Etf)
+    // Total: 246,900 SEK
+    // Stock = 194,400 / 246,900 ≈ 0.7874
+    // Etf   = 52,500  / 246,900 ≈ 0.2126
+    assert_eq!(alloc.entries.len(), 2);
+
+    // Sorted by descending weight: Stock first
+    assert_eq!(alloc.entries[0].instrument_type, InstrumentType::Stock);
+    assert_eq!(alloc.entries[0].market_value.amount, 194_400.0);
+    assert!((alloc.entries[0].weight - 194_400.0 / 246_900.0).abs() < 1e-10);
+
+    assert_eq!(alloc.entries[1].instrument_type, InstrumentType::Etf);
+    assert_eq!(alloc.entries[1].market_value.amount, 52_500.0);
+    assert!((alloc.entries[1].weight - 52_500.0 / 246_900.0).abs() < 1e-10);
+
+    // Weights sum to ~1.0
+    let sum: f64 = alloc.entries.iter().map(|e| e.weight).sum();
+    assert!((sum - 1.0).abs() < 1e-10);
 }

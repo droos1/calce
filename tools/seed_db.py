@@ -16,6 +16,12 @@ from psycopg2.extras import execute_values
 CURRENCIES = ["USD", "EUR", "GBP", "SEK", "JPY"]
 CURRENCY_WEIGHTS = [0.40, 0.25, 0.15, 0.10, 0.10]
 
+INSTRUMENT_TYPES = [
+    "stock", "bond", "etf", "mutual_fund", "certificate",
+    "option", "warrant", "structured_product", "future", "other",
+]
+INSTRUMENT_TYPE_WEIGHTS = [0.40, 0.15, 0.20, 0.10, 0.03, 0.03, 0.02, 0.03, 0.02, 0.02]
+
 # FX pairs with approximate base rates.
 # We generate all cross-pairs so the API can convert between any two currencies.
 _CCY_VS_USD = {"USD": 1.0, "EUR": 1.07, "GBP": 1.24, "SEK": 0.095, "JPY": 0.0067}
@@ -72,21 +78,28 @@ def geometric_brownian_motion(
 # --- Data generators ---
 
 
-def gen_instruments(n: int, rng: random.Random) -> list[tuple[str, str]]:
-    """Return list of (ticker, currency)."""
+def gen_instruments(n: int, rng: random.Random) -> list[tuple[str, str, str]]:
+    """Return list of (ticker, currency, instrument_type)."""
     tickers = generate_tickers(n, rng)
-    return [(t, rng.choices(CURRENCIES, weights=CURRENCY_WEIGHTS, k=1)[0]) for t in tickers]
+    return [
+        (
+            t,
+            rng.choices(CURRENCIES, weights=CURRENCY_WEIGHTS, k=1)[0],
+            rng.choices(INSTRUMENT_TYPES, weights=INSTRUMENT_TYPE_WEIGHTS, k=1)[0],
+        )
+        for t in tickers
+    ]
 
 
 def gen_prices(
-    instruments: list[tuple[str, str]],
+    instruments: list[tuple[str, str, str]],
     trading_days: list[date],
     rng: random.Random,
 ) -> list[tuple[str, date, float]]:
     """Generate price history rows: (instrument_id, date, price)."""
     rows: list[tuple[str, date, float]] = []
     n_days = len(trading_days)
-    for ticker, _ in instruments:
+    for ticker, _, _ in instruments:
         start_price = rng.uniform(10.0, 500.0)
         drift = rng.uniform(-0.05, 0.15)
         vol = rng.uniform(0.15, 0.50)
@@ -140,7 +153,7 @@ def gen_users_and_accounts(
 
 def gen_trades(
     account_map: dict[int, tuple[str, str]],  # db_id -> (user_external_id, currency)
-    instruments: list[tuple[str, str]],  # (ticker, ccy)
+    instruments: list[tuple[str, str, str]],  # (ticker, ccy, instrument_type)
     price_lookup: dict[tuple[str, date], float],
     trading_days: list[date],
     avg_trades_per_user: int,
@@ -154,10 +167,10 @@ def gen_trades(
 
     # Build instrument lookup by currency
     instr_ccy: dict[str, str] = {}
-    for ticker, ccy in instruments:
+    for ticker, ccy, _ in instruments:
         instr_ccy[ticker] = ccy
 
-    all_tickers = [t for t, _ in instruments]
+    all_tickers = [t for t, _, _ in instruments]
     rows: list[tuple[str, int, str, float, float, str, date]] = []
 
     for user_id, accts in user_accounts.items():
@@ -270,7 +283,7 @@ def main():
 
     timed_insert(
         "instruments",
-        "INSERT INTO instruments (ticker, currency) VALUES %s",
+        "INSERT INTO instruments (ticker, currency, instrument_type) VALUES %s",
         instruments,
     )
 

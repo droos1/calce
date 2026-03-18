@@ -4,7 +4,7 @@ use chrono::NaiveDate;
 
 use crate::domain::currency::Currency;
 use crate::domain::fx_rate::FxRate;
-use crate::domain::instrument::InstrumentId;
+use crate::domain::instrument::{InstrumentId, InstrumentType};
 use crate::domain::price::Price;
 use crate::error::{CalceError, CalceResult};
 
@@ -18,6 +18,7 @@ use super::market_data::MarketDataService;
 pub struct TestMarketData {
     prices: HashMap<(InstrumentId, NaiveDate), f64>,
     fx_rates: HashMap<(Currency, Currency, NaiveDate), f64>,
+    instrument_types: HashMap<InstrumentId, InstrumentType>,
 }
 
 impl TestMarketData {
@@ -33,6 +34,15 @@ impl TestMarketData {
 
     pub fn add_fx_rate(&mut self, rate: FxRate, date: NaiveDate) {
         self.fx_rates.insert((rate.from, rate.to, date), rate.rate);
+    }
+
+    pub fn add_instrument_type(
+        &mut self,
+        instrument: &InstrumentId,
+        instrument_type: InstrumentType,
+    ) {
+        self.instrument_types
+            .insert(instrument.clone(), instrument_type);
     }
 }
 
@@ -78,5 +88,12 @@ impl MarketDataService for TestMarketData {
             .get(&(from, to, date))
             .map(|&rate| FxRate::new(from, to, rate))
             .ok_or(CalceError::FxRateNotFound { from, to, date })
+    }
+
+    fn get_instrument_type(&self, instrument: &InstrumentId) -> InstrumentType {
+        self.instrument_types
+            .get(instrument)
+            .copied()
+            .unwrap_or_default()
     }
 }

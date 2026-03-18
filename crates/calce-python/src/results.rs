@@ -197,6 +197,70 @@ impl ValueChangeSummary {
 }
 
 #[pyclass(frozen)]
+pub struct TypeAllocationEntry {
+    pub inner: calce_core::calc::allocation::TypeAllocationEntry,
+}
+
+#[pymethods]
+impl TypeAllocationEntry {
+    #[getter]
+    fn instrument_type(&self) -> &str {
+        self.inner.instrument_type.as_str()
+    }
+
+    #[getter]
+    fn market_value(&self) -> Money {
+        Money {
+            inner: self.inner.market_value,
+        }
+    }
+
+    #[getter]
+    fn weight(&self) -> f64 {
+        self.inner.weight
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TypeAllocationEntry(type=\"{}\", value={}, weight={:.4})",
+            self.inner.instrument_type, self.inner.market_value, self.inner.weight,
+        )
+    }
+}
+
+#[pyclass(frozen)]
+pub struct TypeAllocation {
+    pub inner: calce_core::calc::allocation::TypeAllocation,
+}
+
+#[pymethods]
+impl TypeAllocation {
+    #[getter]
+    fn entries(&self) -> Vec<TypeAllocationEntry> {
+        self.inner
+            .entries
+            .iter()
+            .map(|e| TypeAllocationEntry { inner: e.clone() })
+            .collect()
+    }
+
+    #[getter]
+    fn total(&self) -> Money {
+        Money {
+            inner: self.inner.total,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TypeAllocation(entries={}, total={})",
+            self.inner.entries.len(),
+            self.inner.total,
+        )
+    }
+}
+
+#[pyclass(frozen)]
 pub struct PortfolioReport {
     pub inner: calce_core::reports::portfolio::PortfolioReport,
 }
@@ -243,6 +307,13 @@ impl PortfolioReport {
                     change_pct: self.inner.value_changes.ytd.change_pct,
                 },
             },
+        }
+    }
+
+    #[getter]
+    fn type_allocation(&self) -> TypeAllocation {
+        TypeAllocation {
+            inner: self.inner.type_allocation.clone(),
         }
     }
 

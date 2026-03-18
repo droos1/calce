@@ -4,7 +4,7 @@ use chrono::{Datelike, NaiveDate};
 
 use calce_core::domain::currency::Currency;
 use calce_core::domain::fx_rate::FxRate;
-use calce_core::domain::instrument::InstrumentId;
+use calce_core::domain::instrument::{InstrumentId, InstrumentType};
 use calce_core::domain::price::Price;
 use calce_core::error::{CalceError, CalceResult};
 use calce_core::services::market_data::MarketDataService;
@@ -32,6 +32,8 @@ pub struct InMemoryMarketDataService {
     num_days: usize,
     prices: HashMap<InstrumentId, Vec<f64>>,
     fx_rates: HashMap<(Currency, Currency), Vec<f64>>,
+    #[serde(default)]
+    instrument_types: HashMap<InstrumentId, InstrumentType>,
     total_prices: usize,
     total_fx_rates: usize,
     #[serde(skip)]
@@ -45,6 +47,7 @@ impl Default for InMemoryMarketDataService {
             num_days: 0,
             prices: HashMap::new(),
             fx_rates: HashMap::new(),
+            instrument_types: HashMap::new(),
             total_prices: 0,
             total_fx_rates: 0,
             pending: Some(PendingData::default()),
@@ -67,6 +70,16 @@ impl InMemoryMarketDataService {
                 .or_default()
                 .push((day_ord(date), price.value()));
         }
+    }
+
+    /// Set the instrument type. Works before and after freeze.
+    pub fn add_instrument_type(
+        &mut self,
+        instrument: &InstrumentId,
+        instrument_type: InstrumentType,
+    ) {
+        self.instrument_types
+            .insert(instrument.clone(), instrument_type);
     }
 
     pub fn add_fx_rate(&mut self, rate: FxRate, date: NaiveDate) {
@@ -180,6 +193,7 @@ impl InMemoryMarketDataService {
             num_days,
             prices,
             fx_rates,
+            instrument_types: HashMap::new(),
             total_prices,
             total_fx_rates,
             pending: None,
@@ -210,6 +224,7 @@ impl InMemoryMarketDataService {
             num_days,
             prices,
             fx_rates,
+            instrument_types: HashMap::new(),
             total_prices,
             total_fx_rates,
             pending: None,
@@ -341,5 +356,12 @@ impl MarketDataService for InMemoryMarketDataService {
             return Err(CalceError::FxRateNotFound { from, to, date });
         }
         Ok(FxRate::new(from, to, v))
+    }
+
+    fn get_instrument_type(&self, instrument: &InstrumentId) -> InstrumentType {
+        self.instrument_types
+            .get(instrument)
+            .copied()
+            .unwrap_or_default()
     }
 }

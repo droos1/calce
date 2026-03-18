@@ -1,3 +1,5 @@
+use calce_core::domain::instrument::{InstrumentId, InstrumentType};
+
 use crate::error::DataResult;
 use crate::in_memory_market_data::InMemoryMarketDataService;
 use crate::market_data_store::{InstrumentSummary, MarketDataStore};
@@ -34,7 +36,12 @@ pub async fn load_from_postgres(pool: &PgPool) -> DataResult<(MarketDataStore, U
 
     let instruments: Vec<InstrumentSummary> = instruments_raw
         .into_iter()
-        .map(|(id, currency, name)| InstrumentSummary { id, currency, name })
+        .map(|(id, currency, name, instrument_type)| InstrumentSummary {
+            id,
+            currency,
+            name,
+            instrument_type,
+        })
         .collect();
 
     let mut md = InMemoryMarketDataService::new();
@@ -43,6 +50,12 @@ pub async fn load_from_postgres(pool: &PgPool) -> DataResult<(MarketDataStore, U
     }
     for (date, rate) in all_fx_rates {
         md.add_fx_rate(rate, date);
+    }
+    for instr in &instruments {
+        md.add_instrument_type(
+            &InstrumentId::new(&instr.id),
+            InstrumentType::from_str_lossy(&instr.instrument_type),
+        );
     }
     md.freeze();
 

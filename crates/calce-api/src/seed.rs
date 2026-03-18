@@ -1,7 +1,7 @@
 use calce_core::domain::account::AccountId;
 use calce_core::domain::currency::Currency;
 use calce_core::domain::fx_rate::FxRate;
-use calce_core::domain::instrument::InstrumentId;
+use calce_core::domain::instrument::{InstrumentId, InstrumentType};
 use calce_core::domain::price::Price;
 use calce_core::domain::quantity::Quantity;
 use calce_core::domain::trade::Trade;
@@ -22,6 +22,7 @@ pub(crate) fn seed_market_data() -> InMemoryMarketDataService {
     let sek = Currency::new("SEK");
     let aapl = InstrumentId::new("AAPL");
     let vow3 = InstrumentId::new("VOW3");
+    let spy = InstrumentId::new("SPY");
 
     let today = date(2025, 3, 14); // Friday
     let year_ago = date(2024, 3, 1); // start a bit before year-ago comparison dates
@@ -30,10 +31,16 @@ pub(crate) fn seed_market_data() -> InMemoryMarketDataService {
     // Uses a deterministic sine-wave wobble over a linear trend.
     add_daily_prices(&mut svc, &aapl, year_ago, today, 160.0, 200.0, 0.02);
     add_daily_prices(&mut svc, &vow3, year_ago, today, 100.0, 120.0, 0.03);
+    add_daily_prices(&mut svc, &spy, year_ago, today, 450.0, 520.0, 0.015);
 
     // Constant FX rates for every weekday in the period
     add_daily_fx_rates(&mut svc, year_ago, today, usd, sek, 10.5);
     add_daily_fx_rates(&mut svc, year_ago, today, eur, sek, 11.2);
+
+    // Instrument types
+    svc.add_instrument_type(&aapl, InstrumentType::Stock);
+    svc.add_instrument_type(&vow3, InstrumentType::Stock);
+    svc.add_instrument_type(&spy, InstrumentType::Etf);
 
     svc.freeze();
     svc
@@ -104,13 +111,23 @@ pub(crate) fn seed_user_data() -> UserDataStore {
     });
 
     store.add_trade(Trade {
-        user_id: alice,
+        user_id: alice.clone(),
         account_id: acct_eur,
         instrument_id: InstrumentId::new("VOW3"),
         quantity: Quantity::new(50.0),
         price: Price::new(95.0),
         currency: eur,
         date: date(2024, 2, 15),
+    });
+
+    store.add_trade(Trade {
+        user_id: alice,
+        account_id: acct_usd,
+        instrument_id: InstrumentId::new("SPY"),
+        quantity: Quantity::new(20.0),
+        price: Price::new(460.0),
+        currency: usd,
+        date: date(2024, 3, 1),
     });
 
     store.infer_users();

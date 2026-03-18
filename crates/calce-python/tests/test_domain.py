@@ -57,7 +57,7 @@ class TestTrade:
         usd = calce.Currency("USD")
         t = calce.Trade(
             user_id="alice",
-            account_id="isa",
+            account_id=1,
             instrument_id="AAPL",
             quantity=100.0,
             price=145.0,
@@ -65,7 +65,7 @@ class TestTrade:
             date=date(2025, 1, 15),
         )
         assert t.user_id == "alice"
-        assert t.account_id == "isa"
+        assert t.account_id == 1
         assert t.instrument_id == "AAPL"
         assert t.quantity == 100.0
         assert t.price == 145.0
@@ -73,5 +73,5 @@ class TestTrade:
         assert t.date == date(2025, 1, 15)
 
     def test_negative_quantity_for_sell(self):
-        t = calce.Trade("alice", "isa", "AAPL", -20.0, 155.0, calce.Currency("USD"), date(2025, 1, 15))
+        t = calce.Trade("alice", 1, "AAPL", -20.0, 155.0, calce.Currency("USD"), date(2025, 1, 15))
         assert t.quantity == -20.0

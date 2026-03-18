@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 
 use crate::domain::currency::Currency;
 use crate::domain::fx_rate::FxRate;
-use crate::domain::instrument::InstrumentId;
+use crate::domain::instrument::{InstrumentId, InstrumentType};
 use crate::domain::price::Price;
 use crate::error::CalceResult;
 
@@ -28,4 +28,9 @@ pub trait MarketDataService: Send + Sync {
     ///
     /// Returns `FxRateNotFound` if no rate is available.
     fn get_fx_rate(&self, from: Currency, to: Currency, date: NaiveDate) -> CalceResult<FxRate>;
+
+    /// Returns the instrument type classification. Defaults to `Other`.
+    fn get_instrument_type(&self, _instrument: &InstrumentId) -> InstrumentType {
+        InstrumentType::Other
+    }
 }

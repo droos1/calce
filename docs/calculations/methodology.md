@@ -118,13 +118,48 @@ and the value change calculation.
 Result:
 
     PortfolioReport {
-        market_value:   MarketValueResult,    // positions + total
-        value_changes:  ValueChangeSummary,   // daily/weekly/yearly/YTD
+        market_value:      MarketValueResult,    // positions + total
+        value_changes:     ValueChangeSummary,   // daily/weekly/yearly/YTD
+        type_allocation:   TypeAllocation,        // breakdown by instrument type (#CALC_ALLOC)
     }
 
 ---
 
-### 4.5 Volatility `#CALC_VOL`
+### 4.5 Type Allocation `#CALC_ALLOC`
+
+Groups portfolio positions by instrument type and computes each type's share of
+total portfolio value. Operates on the output of `#CALC_MV` and resolves
+instrument types from market data metadata.
+
+**Instrument types:** Stock, Bond, Etf, MutualFund, Certificate, Option,
+Warrant, StructuredProduct, Future, Other (default for unknown).
+
+**Inputs:**
+
+- `positions` — valued positions from `#CALC_MV`
+- `total` — portfolio total in base currency
+- `market_data` — provides instrument type lookup per instrument
+
+**Computation:**
+
+For each instrument type T present in the portfolio:
+
+    type_value(T) = sum of market_value_base for positions where type = T
+    weight(T)     = type_value(T) / total
+
+Result entries are sorted by descending weight.
+
+When total market value is zero, all weights are zero.
+
+**Short positions** — Short positions have negative `market_value_base`, so
+allocation computes net exposure per type. Weights can fall outside `[0, 1]`
+(e.g. long stocks 150k, short bonds -50k, total 100k → stock weight 1.5,
+bond weight -0.5). This is correct for a net allocation view. If gross
+exposure or separate long/short buckets are needed, this should be extended.
+
+---
+
+### 4.6 Volatility `#CALC_VOL`
 
 Historical realized volatility for a single instrument, computed as the
 annualized standard deviation of logarithmic daily returns.

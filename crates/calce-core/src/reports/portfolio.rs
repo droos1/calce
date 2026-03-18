@@ -1,4 +1,5 @@
 use crate::calc::aggregation::aggregate_positions;
+use crate::calc::allocation::{TypeAllocation, type_allocation};
 use crate::calc::market_value::{MarketValueResult, value_positions};
 use crate::calc::value_change::{ValueChangeSummary, value_change_summary_from};
 use crate::context::CalculationContext;
@@ -9,7 +10,7 @@ use crate::services::market_data::MarketDataService;
 
 /// `#CALC_REPORT`
 ///
-/// Bundled portfolio view: market value + value changes in one pass.
+/// Bundled portfolio view: market value + value changes + type allocation.
 ///
 /// Aggregates trades once, computes the current-date market value, then
 /// feeds that snapshot into `value_change_summary_from` so the current-date
@@ -19,6 +20,7 @@ use crate::services::market_data::MarketDataService;
 pub struct PortfolioReport {
     pub market_value: MarketValueResult,
     pub value_changes: ValueChangeSummary,
+    pub type_allocation: TypeAllocation,
 }
 
 /// `#CALC_REPORT` — pure composite: aggregate, value, diff in one call.
@@ -37,6 +39,11 @@ pub fn portfolio_report(
     let positions = aggregate_positions(trades, ctx.as_of_date)?;
     let mv_outcome = value_positions(&positions, ctx, market_data)?;
     let vc_outcome = value_change_summary_from(&mv_outcome.value, trades, ctx, market_data)?;
+    let alloc = type_allocation(
+        &mv_outcome.value.positions,
+        mv_outcome.value.total,
+        market_data,
+    );
 
     let mut warnings = mv_outcome.warnings;
     warnings.extend(vc_outcome.warnings);
@@ -45,6 +52,7 @@ pub fn portfolio_report(
         PortfolioReport {
             market_value: mv_outcome.value,
             value_changes: vc_outcome.value,
+            type_allocation: alloc,
         },
         warnings,
     ))
@@ -115,5 +123,13 @@ mod tests {
         assert_eq!(report.value_changes.weekly.change.amount, 10_000.0);
         assert_eq!(report.value_changes.yearly.change.amount, 40_000.0);
         assert_eq!(report.value_changes.ytd.change.amount, 20_000.0);
+
+        // Type allocation: single position, no type set → Other
+        assert_eq!(report.type_allocation.entries.len(), 1);
+        assert_eq!(
+            report.type_allocation.entries[0].instrument_type,
+            crate::domain::instrument::InstrumentType::Other
+        );
+        assert!((report.type_allocation.entries[0].weight - 1.0).abs() < f64::EPSILON);
     }
 }
