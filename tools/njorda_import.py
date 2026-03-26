@@ -46,7 +46,9 @@ def get_password_from_sops(secrets_path):
     try:
         result = subprocess.run(
             ["sops", "-d", "--extract", '["DATABASE_PASSWORD"]', secrets_path],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
@@ -93,7 +95,8 @@ def fetch_accounts_with_trades(cur):
 
 def fetch_trades_for_accounts(cur, account_ids):
     """Fetch all valid trades for the given account IDs."""
-    cur.execute("""
+    cur.execute(
+        """
         SELECT t.account_id, t.ticker, t.quantity, t.acquisition_price,
                t.provider_instrument_price, t.provider_instrument_currency,
                t.timestamp
@@ -102,25 +105,33 @@ def fetch_trades_for_accounts(cur, account_ids):
           AND t.ticker IS NOT NULL
           AND t.quantity IS NOT NULL
           AND t.quantity != 0
-    """, (account_ids,))
+    """,
+        (account_ids,),
+    )
     return cur.fetchall()
 
 
 def fetch_users(cur, user_ids):
     """Fetch users by IDs."""
-    cur.execute("""
+    cur.execute(
+        """
         SELECT id, organization_id, email, first_name, last_name
         FROM "user"
         WHERE id = ANY(%s)
-    """, (user_ids,))
+    """,
+        (user_ids,),
+    )
     return cur.fetchall()
 
 
 def fetch_organizations(cur, org_ids):
     """Fetch organizations by IDs."""
-    cur.execute("""
+    cur.execute(
+        """
         SELECT id, name FROM organization WHERE id = ANY(%s)
-    """, (org_ids,))
+    """,
+        (org_ids,),
+    )
     return cur.fetchall()
 
 
@@ -129,17 +140,21 @@ def fetch_organizations(cur, org_ids):
 
 def fetch_instruments(cur, tickers):
     """Fetch instrument metadata for the given tickers."""
-    cur.execute("""
+    cur.execute(
+        """
         SELECT ticker, currency, name, isin, type, sectors
         FROM instrument
         WHERE ticker = ANY(%s)
-    """, (tickers,))
+    """,
+        (tickers,),
+    )
     return cur.fetchall()
 
 
 def fetch_prices(cur, tickers, from_date, to_date):
     """Fetch historical prices, deduped by source priority."""
-    cur.execute("""
+    cur.execute(
+        """
         SELECT DISTINCT ON (hp.ticker, hp.price_date)
             hp.ticker, hp.price_date, hp.close
         FROM historical_price hp
@@ -149,13 +164,16 @@ def fetch_prices(cur, tickers, from_date, to_date):
           AND hp.price_date >= %s AND hp.price_date <= %s
           AND hp.close IS NOT NULL
         ORDER BY hp.ticker, hp.price_date, isrc.priority ASC
-    """, (tickers, from_date, to_date))
+    """,
+        (tickers, from_date, to_date),
+    )
     return cur.fetchall()
 
 
 def fetch_fx_rates(cur, fx_tickers, from_date, to_date):
     """Fetch FX rates from historical_price (FX pairs stored as XXX/YYY tickers)."""
-    cur.execute("""
+    cur.execute(
+        """
         SELECT DISTINCT ON (hp.ticker, hp.price_date)
             hp.ticker, hp.price_date, hp.close
         FROM historical_price hp
@@ -163,7 +181,9 @@ def fetch_fx_rates(cur, fx_tickers, from_date, to_date):
           AND hp.price_date >= %s AND hp.price_date <= %s
           AND hp.close IS NOT NULL
         ORDER BY hp.ticker, hp.price_date
-    """, (fx_tickers, from_date, to_date))
+    """,
+        (fx_tickers, from_date, to_date),
+    )
     return cur.fetchall()
 
 
@@ -176,9 +196,12 @@ def find_fx_tickers(cur, currencies):
                 pairs.append(f"{a}/{b}")
     if not pairs:
         return []
-    cur.execute("""
+    cur.execute(
+        """
         SELECT ticker FROM instrument WHERE ticker = ANY(%s)
-    """, (pairs,))
+    """,
+        (pairs,),
+    )
     return [row[0] for row in cur.fetchall()]
 
 
@@ -214,9 +237,7 @@ def main():
     dataapp_pw = os.environ.get("NJORDA_DB_PASSWORD")
     api_pw = os.environ.get("NJORDA_API_DB_PASSWORD")
 
-    njorda_repo = os.environ.get(
-        "NJORDA_REPO", os.path.expanduser("~/repos/njorda")
-    )
+    njorda_repo = os.environ.get("NJORDA_REPO", os.path.expanduser("~/repos/njorda"))
     sops_path = os.path.join(njorda_repo, "services/api/secrets/dev.yml")
 
     if not dataapp_pw:
@@ -332,14 +353,16 @@ def main():
                 unique_isin = None
             else:
                 seen_isins.add(isin)
-        instrument_rows.append((
-            ticker,
-            unique_isin,
-            name,
-            calce_type,
-            currency or "USD",
-            json.dumps(allocations),
-        ))
+        instrument_rows.append(
+            (
+                ticker,
+                unique_isin,
+                name,
+                calce_type,
+                currency or "USD",
+                json.dumps(allocations),
+            )
+        )
 
     # Prices: (ticker, price_date, price) - will resolve instrument_id after insert
     price_rows = [(ticker, pd, float(close)) for ticker, pd, close in prices_raw]
@@ -394,8 +417,7 @@ def main():
 
     print("Wiping existing data...")
     calce_cur.execute(
-        "TRUNCATE trades, accounts, users, organizations, prices, fx_rates, instruments "
-        "RESTART IDENTITY CASCADE"
+        "TRUNCATE trades, accounts, users, organizations, prices, fx_rates, instruments RESTART IDENTITY CASCADE"
     )
     calce_conn.commit()
 
@@ -403,7 +425,8 @@ def main():
 
     # Organizations
     timed_insert(
-        calce_cur, "organizations",
+        calce_cur,
+        "organizations",
         "INSERT INTO organizations (external_id, name) VALUES %s",
         org_rows,
     )
@@ -415,7 +438,8 @@ def main():
 
     # Instruments
     timed_insert(
-        calce_cur, "instruments",
+        calce_cur,
+        "instruments",
         "INSERT INTO instruments (ticker, isin, name, instrument_type, currency, allocations) VALUES %s",
         instrument_rows,
     )
@@ -426,13 +450,10 @@ def main():
     ticker_to_id = {row[0]: row[1] for row in calce_cur.fetchall()}
 
     # Prices (resolve ticker -> instrument_id)
-    price_insert_rows = [
-        (ticker_to_id[ticker], pd, p)
-        for ticker, pd, p in price_rows
-        if ticker in ticker_to_id
-    ]
+    price_insert_rows = [(ticker_to_id[ticker], pd, p) for ticker, pd, p in price_rows if ticker in ticker_to_id]
     timed_insert(
-        calce_cur, "prices",
+        calce_cur,
+        "prices",
         "INSERT INTO prices (instrument_id, price_date, price) VALUES %s",
         price_insert_rows,
         page_size=10000,
@@ -440,7 +461,8 @@ def main():
 
     # FX rates
     timed_insert(
-        calce_cur, "fx_rates",
+        calce_cur,
+        "fx_rates",
         "INSERT INTO fx_rates (from_currency, to_currency, rate_date, rate) VALUES %s",
         fx_rows,
         page_size=10000,
@@ -448,11 +470,11 @@ def main():
 
     # Users (with organization_id)
     user_insert_rows = [
-        (ext_id, email, name, org_ext_to_calce.get(org_ext_id))
-        for ext_id, email, name, org_ext_id in user_rows
+        (ext_id, email, name, org_ext_to_calce.get(org_ext_id)) for ext_id, email, name, org_ext_id in user_rows
     ]
     timed_insert(
-        calce_cur, "users",
+        calce_cur,
+        "users",
         "INSERT INTO users (external_id, email, name, organization_id) VALUES %s",
         user_insert_rows,
     )
@@ -483,18 +505,12 @@ def main():
         njorda_acct_id_order.append(njorda_acct_id)
 
     timed_insert(
-        calce_cur, "accounts",
+        calce_cur,
+        "accounts",
         "INSERT INTO accounts (user_id, currency, label) VALUES %s",
         account_insert_rows,
     )
     calce_conn.commit()
-
-    # Build njorda_account_id -> calce_account_id map
-    # We need to query back the inserted accounts and match by (user_id, label)
-    calce_cur.execute("SELECT id, user_id, label FROM accounts")
-    calce_accounts = calce_cur.fetchall()
-    # Build (calce_user_id, label) -> calce_account_id
-    calce_acct_lookup = {(row[1], row[2]): row[0] for row in calce_accounts}
 
     # Build njorda_account_id -> calce_account_id using insertion order
     njorda_to_calce_acct = {}
@@ -513,13 +529,21 @@ def main():
         njorda_user_id = account_info[njorda_acct_id][0]
         calce_user_id = user_ext_to_calce.get(str(njorda_user_id))
         if calce_acct_id and calce_instr_id and calce_user_id:
-            trade_insert_rows.append((
-                calce_user_id, calce_acct_id, calce_instr_id,
-                qty, price, currency[:3], trade_date,
-            ))
+            trade_insert_rows.append(
+                (
+                    calce_user_id,
+                    calce_acct_id,
+                    calce_instr_id,
+                    qty,
+                    price,
+                    currency[:3],
+                    trade_date,
+                )
+            )
 
     timed_insert(
-        calce_cur, "trades",
+        calce_cur,
+        "trades",
         "INSERT INTO trades (user_id, account_id, instrument_id, quantity, price, currency, trade_date) VALUES %s",
         trade_insert_rows,
         page_size=10000,

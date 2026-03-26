@@ -56,18 +56,21 @@ Don't restate the function/field/type name as a sentence — if the doc comment 
 
 ## Development
 
-We use Invoke for task automation.
+[Invoke](https://www.pyinvoke.org/) is the single task runner for everything — builds, tests, linting, database management, servers. Run `invoke --list` to see all available tasks.
 
-**`invoke check`** — formatting, clippy, and tests. Run regularly during development.
-**`invoke test`** — full test suite (Rust + Python). Always run before any commit.
+### Key tasks
 
-### Python bindings
+| Task | What it does |
+|------|-------------|
+| `invoke setup` | Install dev dependencies (`uv sync`) |
+| `invoke check` | Lint & format-check all code (clippy + ruff) — no tests |
+| `invoke test` | Run all tests (Rust + Python) |
+| `invoke pre-commit` | Full pre-push gate: `check` + `test` |
+| `invoke dev` | Start DB + API (hot-reload) + open explorer |
+| `invoke ai` | Interactive AI analyst chat (requires DB + `ANTHROPIC_API_KEY`) |
 
-```sh
-maturin develop -m crates/calce-python/Cargo.toml
-pytest crates/calce-python/tests/
-```
+### Adding new services
 
-### AI chat
-
-**`invoke ai`** — interactive AI analyst chat. Requires `DATABASE_URL` and `ANTHROPIC_API_KEY` in `.env`.
+When adding a new service or crate with Python code, wire it into the top-level invoke tasks:
+- Add its directories to `PYTHON_DIRS` in `tasks.py` so `check` covers it
+- If it has its own tests, add them to `test` (or `test_python`)

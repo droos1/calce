@@ -16,8 +16,7 @@ def format_portfolio_report(report) -> str:
     lines.append(f"Positions ({len(mv.positions)}):")
     for p in mv.positions:
         lines.append(
-            f"  {p.instrument_id}: {p.quantity:,.0f} @ {p.price:,.2f} {p.currency.code}"
-            f" = {_money(p.market_value_base)}"
+            f"  {p.instrument_id}: {p.quantity:,.0f} @ {p.price:,.2f} {p.currency.code} = {_money(p.market_value_base)}"
         )
     lines.append("")
 
@@ -53,8 +52,7 @@ def format_market_value(result) -> str:
     lines.append(f"Positions ({len(result.positions)}):")
     for p in result.positions:
         lines.append(
-            f"  {p.instrument_id}: {p.quantity:,.0f} @ {p.price:,.2f} {p.currency.code}"
-            f" = {_money(p.market_value_base)}"
+            f"  {p.instrument_id}: {p.quantity:,.0f} @ {p.price:,.2f} {p.currency.code} = {_money(p.market_value_base)}"
         )
     return "\n".join(lines)
 

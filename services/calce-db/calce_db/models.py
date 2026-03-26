@@ -1,15 +1,15 @@
 from sqlalchemy import (
     CHAR,
+    BigInteger,
     CheckConstraint,
     Column,
-    DateTime,
     Date,
+    DateTime,
     Float,
     ForeignKey,
     Identity,
     Index,
     String,
-    BigInteger,
     UniqueConstraint,
     func,
 )
@@ -127,6 +127,4 @@ class FxRate(Base):
     rate_date = Column(Date, primary_key=True, nullable=False)
     rate = Column(Float, nullable=False)
 
-    __table_args__ = (
-        CheckConstraint("rate > 0", name="fx_rates_rate_check"),
-    )
+    __table_args__ = (CheckConstraint("rate > 0", name="fx_rates_rate_check"),)

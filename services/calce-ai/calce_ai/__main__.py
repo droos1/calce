@@ -6,9 +6,8 @@ from datetime import date
 from pathlib import Path
 
 import anthropic
-from dotenv import load_dotenv
-
 import calce
+from dotenv import load_dotenv
 
 from .tools import TOOL_DEFINITIONS, UserContext, execute_tool
 
@@ -90,11 +89,16 @@ def main():
 
     # Chat loop
     client = anthropic.Anthropic()
+    access_note = (
+        "You have admin access and can view any user."
+        if ctx.role == "admin"
+        else "You can only view this users own portfolio."
+    )
     system_prompt = (
         f"You are a financial portfolio analyst assistant for the Calce calculation engine. "
-        f"You are currently helping user \"{ctx.user_id}\" (role: {ctx.role}). "
+        f'You are currently helping user "{ctx.user_id}" (role: {ctx.role}). '
         f"Base currency: {ctx.base_currency}. Date: {ctx.as_of_date}. "
-        f"{'You have admin access and can view any user.' if ctx.role == 'admin' else 'You can only view this users own portfolio.'} "
+        f"{access_note} "
         f"Use your tools to answer questions about portfolios and market data. "
         f"Format numbers clearly and provide analytical insights."
     )

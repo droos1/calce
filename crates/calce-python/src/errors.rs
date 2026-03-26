@@ -42,9 +42,6 @@ pub fn register(parent: &Bound<'_, PyModule>) -> PyResult<()> {
         "InsufficientDataError",
         parent.py().get_type::<InsufficientDataError>(),
     )?;
-    parent.add(
-        "DataLoadError",
-        parent.py().get_type::<DataLoadError>(),
-    )?;
+    parent.add("DataLoadError", parent.py().get_type::<DataLoadError>())?;
     Ok(())
 }

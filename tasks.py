@@ -5,12 +5,14 @@ import time as _time
 
 from invoke import task
 
-VENV = ".venv"
 PYTHON_CRATE = "crates/calce-python"
 MATURIN_MANIFEST = f"{PYTHON_CRATE}/Cargo.toml"
 API_PORT = 35701
 CALCE_DB = "services/calce-db"
 CALCE_AI = "services/calce-ai"
+
+# All Python directories for linting/formatting
+PYTHON_DIRS = "services/ crates/calce-python/tests/ tools/"
 
 
 # ── Server ──────────────────────────────────────────────────────────────
@@ -50,7 +52,7 @@ def api_njorda(c, release=False, watch=False):
 def ai(c):
     """Start AI financial analyst chat (requires DB + ANTHROPIC_API_KEY)."""
     c.run(
-        f"{VENV}/bin/python -m calce_ai",
+        "uv run python -m calce_ai",
         pty=True,
         env={"PYTHONPATH": CALCE_AI},
     )
@@ -177,7 +179,7 @@ def db_reset(c):
 def seed_db(c, instruments=1000, users=100, trades_per_user=100, history_years=5):
     """Seed the database with realistic test data."""
     c.run(
-        f"uv run --with psycopg2-binary tools/seed_db.py"
+        f"uv run tools/seed_db.py"
         f" --instruments {instruments}"
         f" --users {users}"
         f" --trades-per-user {trades_per_user}"
@@ -199,7 +201,7 @@ def njorda_import(c, from_date="2023-01-01", to_date="", dry_run=False):
     to_flag = f" --to-date {to_date}" if to_date else ""
     dry = " --dry-run" if dry_run else ""
     c.run(
-        f"uv run --with psycopg2-binary tools/njorda_import.py"
+        f"uv run tools/njorda_import.py"
         f" --from-date {from_date}{to_flag}{dry}",
         pty=True,
     )
@@ -234,59 +236,69 @@ def njorda_fetch(c, from_date="2023-01-01", to_date="2026-03-06", fresh=False):
 
 @task
 def setup(c):
-    """Create venv and install Python dev dependencies."""
-    c.run(f"uv venv {VENV}")
-    c.run(f"uv pip install --python {VENV}/bin/python maturin pytest")
+    """Install all dev dependencies (creates .venv via uv)."""
+    c.run("uv sync")
 
 
 @task
 def build(c):
-    """Build Rust crates (core + api) and Python extension."""
+    """Build Rust crates and Python extension."""
     c.run("cargo build")
-    c.run(f"{VENV}/bin/maturin develop -m {MATURIN_MANIFEST} --uv")
-
-
-@task
-def build_rust(c):
-    """Build Rust crates only (excludes calce-python cdylib)."""
-    c.run("cargo build")
+    build_python(c)
 
 
 @task
 def build_python(c):
-    """Build Python extension into the venv (requires maturin)."""
-    c.run(f"{VENV}/bin/maturin develop -m {MATURIN_MANIFEST} --uv")
+    """Build Python extension into the venv."""
+    # Unset CONDA_PREFIX to avoid maturin conflict with VIRTUAL_ENV
+    c.run(f"unset CONDA_PREFIX && uv run maturin develop -m {MATURIN_MANIFEST} --uv")
 
 
-# ── Test & Check ────────────────────────────────────────────────────────
+# ── Lint & Check ────────────────────────────────────────────────────────
 
 
 @task
 def check(c):
-    """Run clippy and format check (no tests)."""
-    c.run("cargo clippy --workspace -- -D warnings")
+    """Lint and format-check all code (Rust + Python). No tests."""
+    print("── Rust ──")
     c.run("cargo fmt --check")
+    c.run("cargo clippy --workspace -- -D warnings")
+    print("── Python ──")
+    c.run(f"uv run ruff check {PYTHON_DIRS}")
+    c.run(f"uv run ruff format --check {PYTHON_DIRS}")
+
+
+# ── Test ────────────────────────────────────────────────────────────────
 
 
 @task
 def test_rust(c):
-    """Run Rust tests and clippy."""
+    """Run Rust tests."""
     c.run("cargo test")
-    c.run("cargo clippy --workspace -- -D warnings")
 
 
 @task
 def test_python(c):
-    """Run Python tests."""
-    c.run(f"{VENV}/bin/pytest {PYTHON_CRATE}/tests/ -v")
+    """Build Python extension and run pytest."""
+    build_python(c)
+    c.run(f"uv run pytest {PYTHON_CRATE}/tests/ -v")
 
 
 @task
 def test(c):
     """Run all tests (Rust + Python)."""
     test_rust(c)
-    build_python(c)
     test_python(c)
+
+
+@task
+def pre_commit(c):
+    """Full pre-push gate: lint + test everything. Run before pushing."""
+    check(c)
+    test(c)
+
+
+# ── Utilities ───────────────────────────────────────────────────────────
 
 
 @task

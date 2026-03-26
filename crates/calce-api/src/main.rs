@@ -137,7 +137,7 @@ fn create_njorda_cache_service() -> MarketDataStore {
 fn create_njorda_cache_service() -> MarketDataStore {
     eprintln!("Error: njorda-cache backend requires the 'njorda' feature.");
     eprintln!("Build with: cargo run -p calce-api --features njorda");
-    eprintln!("Or use: invoke run-api --njorda");
+    eprintln!("Or use: invoke api-njorda");
     std::process::exit(1);
 }
 

@@ -53,7 +53,14 @@ impl CalcEngine {
         market_data: Py<MarketData>,
         user_data: Py<UserData>,
     ) -> PyResult<Self> {
-        Self::create(py, base_currency, as_of_date, user_id, market_data, user_data)
+        Self::create(
+            py,
+            base_currency,
+            as_of_date,
+            user_id,
+            market_data,
+            user_data,
+        )
     }
 
     fn market_value(&self, py: Python<'_>) -> PyResult<MarketValueResult> {

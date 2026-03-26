@@ -40,10 +40,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "calculate_volatility",
-        "description": (
-            "Calculate historical realized volatility (annualized and daily) "
-            "for a specific instrument."
-        ),
+        "description": ("Calculate historical realized volatility (annualized and daily) for a specific instrument."),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -97,8 +94,7 @@ TOOL_DEFINITIONS = [
     {
         "name": "get_data_overview",
         "description": (
-            "Get an overview of available data: counts of users, instruments, "
-            "prices, FX rates, and trades."
+            "Get an overview of available data: counts of users, instruments, prices, FX rates, and trades."
         ),
         "input_schema": {
             "type": "object",

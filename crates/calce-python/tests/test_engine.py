@@ -195,4 +195,3 @@ class TestPortfolioReport:
         assert "Health Care" in entries
         assert abs(entries["Health Care"].market_value.amount - 20_000.0) < 1e-6
         assert abs(entries["Health Care"].weight - 0.08) < 1e-6
-

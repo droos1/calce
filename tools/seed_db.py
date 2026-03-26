@@ -18,16 +18,32 @@ CURRENCIES = ["USD", "EUR", "GBP", "SEK", "JPY"]
 CURRENCY_WEIGHTS = [0.40, 0.25, 0.15, 0.10, 0.10]
 
 INSTRUMENT_TYPES = [
-    "stock", "bond", "etf", "mutual_fund", "certificate",
-    "option", "warrant", "structured_product", "future", "other",
+    "stock",
+    "bond",
+    "etf",
+    "mutual_fund",
+    "certificate",
+    "option",
+    "warrant",
+    "structured_product",
+    "future",
+    "other",
 ]
 INSTRUMENT_TYPE_WEIGHTS = [0.40, 0.15, 0.20, 0.10, 0.03, 0.03, 0.02, 0.03, 0.02, 0.02]
 
 # GICS top-level sectors (MSCI/S&P standard)
 GICS_SECTORS = [
-    "Communication Services", "Consumer Discretionary", "Consumer Staples",
-    "Energy", "Financials", "Health Care", "Industrials",
-    "Information Technology", "Materials", "Real Estate", "Utilities",
+    "Communication Services",
+    "Consumer Discretionary",
+    "Consumer Staples",
+    "Energy",
+    "Financials",
+    "Health Care",
+    "Industrials",
+    "Information Technology",
+    "Materials",
+    "Real Estate",
+    "Utilities",
 ]
 GICS_SECTOR_WEIGHTS = [0.09, 0.10, 0.06, 0.04, 0.12, 0.13, 0.09, 0.30, 0.02, 0.02, 0.03]
 
@@ -91,7 +107,8 @@ def geometric_brownian_motion(
 
 
 def _gen_sector_allocations(
-    instrument_type: str, rng: random.Random,
+    instrument_type: str,
+    rng: random.Random,
 ) -> dict[str, dict[str, float]]:
     """Generate sector allocation weights for an instrument.
 
@@ -159,8 +176,11 @@ def gen_fx_rates(
 
 
 ORG_NAMES = [
-    "Acme Wealth", "Nordic Capital Partners", "Coastal Investments",
-    "Summit Advisory", "Horizon Asset Management",
+    "Acme Wealth",
+    "Nordic Capital Partners",
+    "Coastal Investments",
+    "Summit Advisory",
+    "Horizon Asset Management",
 ]
 
 
@@ -333,7 +353,9 @@ def main():
     cur = conn.cursor()
 
     print("Truncating tables...")
-    cur.execute("TRUNCATE trades, accounts, users, organizations, prices, fx_rates, instruments RESTART IDENTITY CASCADE")
+    cur.execute(
+        "TRUNCATE trades, accounts, users, organizations, prices, fx_rates, instruments RESTART IDENTITY CASCADE"
+    )
 
     def timed_insert(label, sql, rows, page_size=5000):
         t = time.time()
@@ -377,8 +399,7 @@ def main():
     timed_insert(
         "users",
         "INSERT INTO users (external_id, email, organization_id) VALUES %s",
-        [(uid, email, org_to_id.get(user_org_map.get(uid, ""), 0) or None)
-         for uid, email in users],
+        [(uid, email, org_to_id.get(user_org_map.get(uid, ""), 0) or None) for uid, email in users],
     )
 
     # Build user external_id -> internal id map
@@ -398,15 +419,15 @@ def main():
     account_map: dict[int, tuple[str, str]] = {row[0]: (row[1], row[2]) for row in cur.fetchall()}
 
     print(f"Generating trades (~{args.trades_per_user} per user)...")
-    trade_rows = gen_trades(
-        account_map, instruments, price_lookup, trading_days, args.trades_per_user, rng
-    )
+    trade_rows = gen_trades(account_map, instruments, price_lookup, trading_days, args.trades_per_user, rng)
 
     timed_insert(
         "trades",
         "INSERT INTO trades (user_id, account_id, instrument_id, quantity, price, currency, trade_date) VALUES %s",
-        [(user_to_id[user_ext_id], acct_id, ticker_to_id[ticker], qty, price, ccy, trade_date)
-         for user_ext_id, acct_id, ticker, qty, price, ccy, trade_date in trade_rows],
+        [
+            (user_to_id[user_ext_id], acct_id, ticker_to_id[ticker], qty, price, ccy, trade_date)
+            for user_ext_id, acct_id, ticker, qty, price, ccy, trade_date in trade_rows
+        ],
         page_size=10000,
     )
 
@@ -425,7 +446,7 @@ def main():
     print(f"  {len(trade_rows):,} trades")
 
     # Print some sample user IDs for smoke testing
-    print(f"\nSample users: {users[0][0]}, {users[len(users)//2][0]}, {users[-1][0]}")
+    print(f"\nSample users: {users[0][0]}, {users[len(users) // 2][0]}, {users[-1][0]}")
     sample_ticker = instruments[0][0]
     print(f"Sample instrument: {sample_ticker}")
 

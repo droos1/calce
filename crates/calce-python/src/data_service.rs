@@ -33,9 +33,8 @@ pub struct DataService {
 impl DataService {
     #[new]
     fn new(py: Python<'_>) -> PyResult<Self> {
-        let db_url = env::var("DATABASE_URL").map_err(|_| {
-            DataLoadError::new_err("DATABASE_URL environment variable is required")
-        })?;
+        let db_url = env::var("DATABASE_URL")
+            .map_err(|_| DataLoadError::new_err("DATABASE_URL environment variable is required"))?;
 
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| DataLoadError::new_err(format!("Failed to create async runtime: {e}")))?;
@@ -103,7 +102,9 @@ impl DataService {
     ) -> PyResult<Vec<PyPricePoint>> {
         let md = self.market_data.borrow(py);
         let iid = InstrumentId::new(instrument_id);
-        let history = md.inner.get_price_history(&iid, from_date, to_date)
+        let history = md
+            .inner
+            .get_price_history(&iid, from_date, to_date)
             .map_err(calce_err_to_py)?;
         Ok(history
             .into_iter()
