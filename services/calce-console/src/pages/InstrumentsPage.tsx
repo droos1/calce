@@ -1,0 +1,98 @@
+import { useQuery } from '@tanstack/react-query'
+import type { ColumnDef } from '@tanstack/react-table'
+import { useMemo, useState, useEffect } from 'react'
+import { useNavigate } from 'react-router'
+import { api } from '../api/client'
+import type { Instrument } from '../api/types'
+import DataTable from '../components/DataTable'
+import SearchInput from '../components/SearchInput'
+import Pagination from '../components/Pagination'
+import Spinner from '../components/Spinner'
+import Badge from '../components/Badge'
+
+const PAGE_SIZE = 30
+
+export default function InstrumentsPage() {
+  const navigate = useNavigate()
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setDebouncedSearch(search)
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(timeout)
+  }, [search])
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['instruments', { page, search: debouncedSearch, pageSize: PAGE_SIZE }],
+    queryFn: () =>
+      api.getInstruments({
+        offset: (page - 1) * PAGE_SIZE,
+        limit: PAGE_SIZE,
+        search: debouncedSearch || undefined,
+      }),
+  })
+
+  const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0
+
+  const columns = useMemo<ColumnDef<Instrument, unknown>[]>(
+    () => [
+      {
+        accessorKey: 'id',
+        header: 'ID',
+        cell: ({ getValue }) => (
+          <span className="ds-text--mono">
+            <Badge variant="neutral">{getValue<string>()}</Badge>
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'name',
+        header: 'Name',
+        cell: ({ getValue }) => getValue<string | null>() || '-',
+      },
+      {
+        accessorKey: 'instrument_type',
+        header: 'Type',
+        cell: ({ getValue }) => <Badge>{getValue<string>()}</Badge>,
+      },
+      {
+        accessorKey: 'currency',
+        header: 'Currency',
+      },
+    ],
+    []
+  )
+
+  return (
+    <div className="ds-page">
+      <div className="ds-page__header">
+        <h1 className="ds-page__title">Instruments</h1>
+        <div className="ds-page__actions">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search instruments..."
+          />
+        </div>
+      </div>
+      {isLoading ? (
+        <Spinner size="lg" center />
+      ) : data ? (
+        <>
+          <DataTable
+            data={data.items}
+            columns={columns}
+            onRowClick={(row) => navigate(`/instruments/${row.id}`)}
+          />
+          {totalPages > 1 && (
+            <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+          )}
+        </>
+      ) : null}
+    </div>
+  )
+}
