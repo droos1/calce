@@ -1,48 +1,41 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router'
 import { api } from '../api/client'
 import type { Instrument } from '../api/types'
+import { PAGE_SIZE } from '../constants'
 import DataTable from '../components/DataTable'
 import SearchInput from '../components/SearchInput'
 import Pagination from '../components/Pagination'
 import Spinner from '../components/Spinner'
+import { usePageTitle } from '../hooks/usePageTitle'
+import { usePaginatedSearch } from '../hooks/usePaginatedSearch'
 import Badge from '../components/Badge'
 
-const PAGE_SIZE = 30
-
 export default function InstrumentsPage() {
+  usePageTitle('Instruments')
   const navigate = useNavigate()
-  const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const { page, setPage, search, setSearch, debouncedSearch, offset, totalPages } =
+    usePaginatedSearch(PAGE_SIZE)
 
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      setDebouncedSearch(search)
-      setPage(1)
-    }, 300)
-    return () => clearTimeout(timeout)
-  }, [search])
-
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['instruments', { page, search: debouncedSearch, pageSize: PAGE_SIZE }],
     queryFn: () =>
       api.getInstruments({
-        offset: (page - 1) * PAGE_SIZE,
+        offset,
         limit: PAGE_SIZE,
         search: debouncedSearch || undefined,
       }),
   })
 
-  const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0
+  const pages = data ? totalPages(data.total) : 0
 
   const columns = useMemo<ColumnDef<Instrument, unknown>[]>(
     () => [
       {
-        accessorKey: 'id',
-        header: 'ID',
+        accessorKey: 'ticker',
+        header: 'Ticker',
         cell: ({ getValue }) => (
           <span className="ds-text--mono">
             <Badge variant="neutral">{getValue<string>()}</Badge>
@@ -79,7 +72,9 @@ export default function InstrumentsPage() {
           />
         </div>
       </div>
-      {isLoading ? (
+      {error ? (
+        <p className="ds-text--secondary">Failed to load instruments: {error.message}</p>
+      ) : isLoading ? (
         <Spinner size="lg" center />
       ) : data ? (
         <>
@@ -88,8 +83,8 @@ export default function InstrumentsPage() {
             columns={columns}
             onRowClick={(row) => navigate(`/instruments/${row.id}`)}
           />
-          {totalPages > 1 && (
-            <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+          {pages > 1 && (
+            <Pagination page={page} totalPages={pages} onPageChange={setPage} />
           )}
         </>
       ) : null}

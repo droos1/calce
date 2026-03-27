@@ -1,6 +1,8 @@
 import { Link } from 'react-router'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 export default function NotFoundPage() {
+  usePageTitle('Not Found')
   return (
     <div className="ds-page">
       <div className="ds-empty">

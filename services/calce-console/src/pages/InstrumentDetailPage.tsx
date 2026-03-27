@@ -1,32 +1,39 @@
 import { useParams, Link } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { api } from '../api/client'
 import type { Price } from '../api/types'
 import { IconChevronLeft } from '../components/icons'
-import Card from '../components/Card'
 import Badge from '../components/Badge'
-import Tabs from '../components/Tabs'
 import DataTable from '../components/DataTable'
 import PriceChart from '../components/PriceChart'
 import Spinner from '../components/Spinner'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 export default function InstrumentDetailPage() {
   const { id } = useParams()
-  const [activeTab, setActiveTab] = useState('Overview')
 
-  const { data: instrumentsData, isLoading: instrumentsLoading } = useQuery({
-    queryKey: ['instruments', { page: 1, search: '', pageSize: 1000 }],
-    queryFn: () => api.getInstruments({ limit: 1000 }),
+  const numericId = Number(id)
+
+  const { data: instrument, isLoading: instrumentLoading, error: instrumentError } = useQuery({
+    queryKey: ['instrument', numericId],
+    queryFn: () => api.getInstrument(numericId),
+    enabled: Number.isFinite(numericId),
   })
 
-  const instrument = instrumentsData?.items.find((i) => i.id === id)
+  usePageTitle(instrument?.name ?? 'Instrument')
 
   const { data: prices, isLoading: pricesLoading } = useQuery({
-    queryKey: ['instrument-prices', id],
-    queryFn: () => api.getInstrumentPrices(id!),
-    enabled: activeTab === 'Price History',
+    queryKey: ['instrument-prices', instrument?.ticker],
+    queryFn: () => {
+      const to = new Date().toISOString().slice(0, 10)
+      const from = new Date(Date.now() - 5 * 365 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10)
+      return api.getInstrumentPrices(instrument!.ticker, { from, to })
+    },
+    enabled: !!instrument,
   })
 
   const priceColumns = useMemo<ColumnDef<Price, unknown>[]>(
@@ -50,7 +57,7 @@ export default function InstrumentDetailPage() {
     []
   )
 
-  if (instrumentsLoading) {
+  if (instrumentLoading) {
     return (
       <div className="ds-page">
         <Spinner size="lg" center />
@@ -58,10 +65,13 @@ export default function InstrumentDetailPage() {
     )
   }
 
-  if (!instrument) {
+  if (instrumentError || !instrument) {
     return (
       <div className="ds-page">
-        <p>Instrument not found.</p>
+        <Link to="/instruments" className="ds-back-link">
+          <IconChevronLeft size={12} /> Back to Instruments
+        </Link>
+        <p className="ds-text--secondary">{instrumentError?.message || 'Instrument not found.'}</p>
       </div>
     )
   }
@@ -73,42 +83,41 @@ export default function InstrumentDetailPage() {
       </Link>
       <div className="ds-page__header">
         <div className="ds-page__actions">
-          <h1 className="ds-page__title">{instrument.name || instrument.id}</h1>
-          <Badge variant="neutral">{instrument.id}</Badge>
+          <h1 className="ds-page__title">{instrument.name || instrument.ticker}</h1>
+          <Badge variant="neutral">{instrument.ticker}</Badge>
           <Badge variant="info">{instrument.instrument_type}</Badge>
         </div>
       </div>
 
-      <Tabs tabs={['Overview', 'Price History']} active={activeTab} onChange={setActiveTab} />
+      <div className="ds-kv-inline ds-mt-md">
+        <span className="ds-kv-inline__item">
+          <span className="ds-kv-inline__label">Ticker</span>
+          <span className="ds-text--mono">{instrument.ticker}</span>
+        </span>
+        <span className="ds-kv-inline__item">
+          <span className="ds-kv-inline__label">Name</span>
+          <span>{instrument.name || '-'}</span>
+        </span>
+        <span className="ds-kv-inline__item">
+          <span className="ds-kv-inline__label">Type</span>
+          <span>{instrument.instrument_type}</span>
+        </span>
+        <span className="ds-kv-inline__item">
+          <span className="ds-kv-inline__label">Currency</span>
+          <span>{instrument.currency}</span>
+        </span>
+      </div>
 
-      {activeTab === 'Overview' && (
-        <Card header="Instrument Details" className="ds-mt-xl">
-          <div className="ds-kv-grid">
-            <span className="ds-kv-grid__label">ID</span>
-            <span className="ds-text--mono">{instrument.id}</span>
-            <span className="ds-kv-grid__label">Name</span>
-            <span>{instrument.name || '-'}</span>
-            <span className="ds-kv-grid__label">Type</span>
-            <span>{instrument.instrument_type}</span>
-            <span className="ds-kv-grid__label">Currency</span>
-            <span>{instrument.currency}</span>
-          </div>
-        </Card>
-      )}
+      <div className="ds-chart-container ds-mt-lg">
+        {pricesLoading ? (
+          <Spinner size="lg" center />
+        ) : prices ? (
+          <PriceChart data={prices} />
+        ) : null}
+      </div>
 
-      {activeTab === 'Price History' && (
-        <>
-          <div className="ds-chart-container ds-mt-xl">
-            {pricesLoading ? (
-              <Spinner size="lg" center />
-            ) : prices ? (
-              <PriceChart data={prices} />
-            ) : null}
-          </div>
-          {!pricesLoading && prices && (
-            <DataTable data={prices} columns={priceColumns} />
-          )}
-        </>
+      {!pricesLoading && prices && (
+        <DataTable data={prices} columns={priceColumns} />
       )}
     </div>
   )

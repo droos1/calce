@@ -1,13 +1,17 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useMemo } from 'react'
+import { useNavigate } from 'react-router'
 import { api } from '../api/client'
 import type { Organization } from '../api/types'
 import DataTable from '../components/DataTable'
 import Spinner from '../components/Spinner'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 export default function OrganizationsPage() {
-  const { data, isLoading } = useQuery({
+  usePageTitle('Organizations')
+  const navigate = useNavigate()
+  const { data, isLoading, error } = useQuery({
     queryKey: ['organizations'],
     queryFn: () => api.getOrganizations(),
   })
@@ -20,11 +24,8 @@ export default function OrganizationsPage() {
         cell: ({ getValue }) => getValue<string | null>() || '-',
       },
       {
-        accessorKey: 'id',
-        header: 'ID',
-        cell: ({ getValue }) => (
-          <span className="ds-text--mono">{getValue<string>()}</span>
-        ),
+        accessorKey: 'user_count',
+        header: 'Users',
       },
       {
         accessorKey: 'created_at',
@@ -41,10 +42,12 @@ export default function OrganizationsPage() {
       <div className="ds-page__header">
         <h1 className="ds-page__title">Organizations</h1>
       </div>
-      {isLoading ? (
+      {error ? (
+        <p className="ds-text--secondary">Failed to load organizations: {error.message}</p>
+      ) : isLoading ? (
         <Spinner size="lg" center />
       ) : data ? (
-        <DataTable data={data} columns={columns} />
+        <DataTable data={data} columns={columns} onRowClick={(row) => navigate(`/organizations/${row.id}`)} />
       ) : null}
     </div>
   )

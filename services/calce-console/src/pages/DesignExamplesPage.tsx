@@ -7,6 +7,7 @@ import Modal from '../components/Modal'
 import Badge from '../components/Badge'
 import PriceChart from '../components/PriceChart'
 import type { Price } from '../api/types'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 // Generate sample price data for the chart
 function generatePriceData(): Price[] {
@@ -26,6 +27,7 @@ function generatePriceData(): Price[] {
 const priceData = generatePriceData()
 
 export default function DesignExamplesPage() {
+  usePageTitle('Design Examples')
   const [loginOpen, setLoginOpen] = useState(false)
 
   return (

@@ -2,17 +2,22 @@ export interface Organization {
   id: string;
   name: string | null;
   created_at: string;
+  user_count: number;
 }
 
 export interface User {
   id: string;
   email: string | null;
+  name: string | null;
   organization_id: string | null;
+  organization_name: string | null;
   trade_count: number;
+  account_count: number;
 }
 
 export interface Instrument {
-  id: string;
+  id: number;
+  ticker: string;
   name: string | null;
   instrument_type: string;
   currency: string;
@@ -24,6 +29,28 @@ export interface Instrument {
 export interface Price {
   date: string;
   price: number;
+}
+
+export interface AccountSummary {
+  id: number;
+  label: string;
+  currency: string;
+  trade_count: number;
+}
+
+export interface PositionSummary {
+  instrument_id: string;
+  quantity: number;
+  currency: string;
+  trade_count: number;
+}
+
+export interface FxRateSummary {
+  from_currency: string;
+  to_currency: string;
+  pair: string;
+  data_points: number;
+  latest_rate: number | null;
 }
 
 export interface DataStats {

@@ -3,8 +3,10 @@ import { useNavigate, Navigate } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
 import Button from '../components/Button'
 import Input from '../components/Input'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 export default function LoginPage() {
+  usePageTitle('Login')
   const { isAuthenticated, login } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')

@@ -13,6 +13,7 @@ import Tabs from '../components/Tabs'
 import Spinner from '../components/Spinner'
 import EmptyState from '../components/EmptyState'
 import { IconPlus } from '../components/icons'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 interface SampleRow {
   id: number
@@ -29,6 +30,7 @@ const sampleData: SampleRow[] = [
 ]
 
 export default function DesignComponentsPage() {
+  usePageTitle('Design Components')
   const [modalOpen, setModalOpen] = useState(false)
   const [demoPage, setDemoPage] = useState(3)
   const [demoTab, setDemoTab] = useState('First')

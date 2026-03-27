@@ -3,7 +3,7 @@ import { IconMoon, IconSun } from "./icons";
 
 const STORAGE_KEY = "calce-theme";
 
-function ThemeToggle() {
+function ThemeToggle({ className }: { className?: string }) {
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     return stored === "dark" ? "dark" : "light";
@@ -19,7 +19,7 @@ function ThemeToggle() {
   }
 
   return (
-    <button className="ds-btn ds-btn--ghost ds-btn--icon" onClick={toggle}>
+    <button className={className ?? "ds-btn ds-btn--ghost ds-btn--icon"} onClick={toggle}>
       {theme === "light" ? <IconMoon /> : <IconSun />}
     </button>
   );

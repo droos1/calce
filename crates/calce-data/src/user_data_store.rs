@@ -8,6 +8,14 @@ use crate::permissions;
 use calce_core::domain::trade::Trade;
 use calce_core::domain::user::UserId;
 
+#[derive(Clone, Serialize)]
+pub struct PositionSummary {
+    pub instrument_id: String,
+    pub quantity: f64,
+    pub currency: String,
+    pub trade_count: i64,
+}
+
 #[derive(Default)]
 pub struct UserDataStore {
     trades: HashMap<UserId, Vec<Trade>>,
@@ -18,8 +26,11 @@ pub struct UserDataStore {
 pub struct UserSummary {
     pub id: String,
     pub email: Option<String>,
+    pub name: Option<String>,
     pub organization_id: Option<String>,
+    pub organization_name: Option<String>,
     pub trade_count: i64,
+    pub account_count: i64,
 }
 
 fn check_user_access(security_ctx: &SecurityContext, user_id: &UserId) -> DataResult<()> {
@@ -67,8 +78,11 @@ impl UserDataStore {
             .map(|id| UserSummary {
                 id: id.as_str().to_owned(),
                 email: None,
+                name: None,
                 organization_id: None,
+                organization_name: None,
                 trade_count: 0,
+                account_count: 0,
             })
             .collect();
     }
@@ -115,12 +129,53 @@ impl UserDataStore {
         }
     }
 
+    /// Look up a single user by ID, enforcing access control.
+    pub fn get_user(&self, ctx: &SecurityContext, user_id: &str) -> Option<UserSummary> {
+        if ctx.is_admin() {
+            self.users.iter().find(|u| u.id == user_id).cloned()
+        } else if ctx.user_id.as_str() == user_id {
+            self.users.iter().find(|u| u.id == user_id).cloned()
+        } else {
+            None
+        }
+    }
+
     pub fn user_count(&self) -> i64 {
         i64::try_from(self.users.len()).unwrap_or(0)
     }
 
     pub fn trade_count(&self) -> i64 {
         i64::try_from(self.trades.values().map(Vec::len).sum::<usize>()).unwrap_or(0)
+    }
+
+    pub fn positions_for_user(
+        &self,
+        ctx: &SecurityContext,
+        user_id: &UserId,
+    ) -> DataResult<Vec<PositionSummary>> {
+        check_user_access(ctx, user_id)?;
+        let trades = self.trades_for(user_id).unwrap_or_default();
+
+        let mut positions: HashMap<String, (f64, String, i64)> = HashMap::new();
+        for trade in &trades {
+            let entry = positions
+                .entry(trade.instrument_id.as_str().to_owned())
+                .or_insert((0.0, trade.currency.as_str().to_owned(), 0));
+            entry.0 += trade.quantity.value();
+            entry.2 += 1;
+        }
+
+        let mut result: Vec<PositionSummary> = positions
+            .into_iter()
+            .map(|(instrument_id, (quantity, currency, trade_count))| PositionSummary {
+                instrument_id,
+                quantity,
+                currency,
+                trade_count,
+            })
+            .collect();
+        result.sort_by(|a, b| a.instrument_id.cmp(&b.instrument_id));
+        Ok(result)
     }
 
     pub fn organization_count(&self) -> i64 {

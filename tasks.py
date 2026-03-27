@@ -1,4 +1,5 @@
 import os
+import signal
 import subprocess
 import sys
 import time as _time
@@ -96,12 +97,15 @@ def dev(c):
     c.run("docker compose up -d postgres", hide="both")
     c.run(f"cd {CALCE_DB} && uv run alembic upgrade head", hide="both")
 
-    # 2. Start API with hot-reload in background
+    # 2. Start API with hot-reload in background.
+    #    start_new_session=True gives cargo-watch its own process group so it
+    #    can properly SIGTERM the spawned server binary on rebuild.
     print("Starting API with hot-reload...")
     env = {"RUST_LOG": "info"}
     api_proc = subprocess.Popen(
         ["cargo", "watch", "-x", "run -p calce-api"],
         env={**os.environ, **env},
+        start_new_session=True,
     )
 
     # 3. Start console frontend in background
@@ -110,17 +114,23 @@ def dev(c):
         ["npm", "run", "dev"],
         cwd=CALCE_CONSOLE,
         env={**os.environ},
+        start_new_session=True,
     )
 
     def _cleanup():
         for proc in [api_proc, console_proc]:
-            proc.terminate()
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
             try:
                 proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
-                proc.kill()
-        # cargo watch spawns children in separate process groups;
-        # clean up any orphans still bound to our port.
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+        # Clean up any orphans still bound to our port.
         subprocess.run(
             f"lsof -ti:{API_PORT} | xargs kill -9 2>/dev/null",
             shell=True,

@@ -11,9 +11,15 @@ pub struct PyUserInfo {
     #[pyo3(get)]
     pub email: Option<String>,
     #[pyo3(get)]
+    pub name: Option<String>,
+    #[pyo3(get)]
     pub organization_id: Option<String>,
     #[pyo3(get)]
+    pub organization_name: Option<String>,
+    #[pyo3(get)]
     pub trade_count: i64,
+    #[pyo3(get)]
+    pub account_count: i64,
 }
 
 impl From<&UserSummary> for PyUserInfo {
@@ -21,8 +27,11 @@ impl From<&UserSummary> for PyUserInfo {
         Self {
             id: u.id.clone(),
             email: u.email.clone(),
+            name: u.name.clone(),
             organization_id: u.organization_id.clone(),
+            organization_name: u.organization_name.clone(),
             trade_count: u.trade_count,
+            account_count: u.account_count,
         }
     }
 }
@@ -44,7 +53,9 @@ impl PyUserInfo {
 #[pyclass(frozen, name = "InstrumentInfo")]
 pub struct PyInstrumentInfo {
     #[pyo3(get)]
-    pub id: String,
+    pub id: i64,
+    #[pyo3(get)]
+    pub ticker: String,
     #[pyo3(get)]
     pub currency: String,
     #[pyo3(get)]
@@ -56,7 +67,8 @@ pub struct PyInstrumentInfo {
 impl From<&InstrumentSummary> for PyInstrumentInfo {
     fn from(i: &InstrumentSummary) -> Self {
         Self {
-            id: i.id.clone(),
+            id: i.id,
+            ticker: i.ticker.clone(),
             currency: i.currency.clone(),
             name: i.name.clone(),
             instrument_type: i.instrument_type.clone(),
@@ -72,8 +84,8 @@ impl PyInstrumentInfo {
             .as_deref()
             .map_or(String::new(), |n| format!(", name={n:?}"));
         format!(
-            "InstrumentInfo(id={:?}{}, type={:?}, currency={:?})",
-            self.id, name, self.instrument_type, self.currency
+            "InstrumentInfo(id={}, ticker={:?}{}, type={:?}, currency={:?})",
+            self.id, self.ticker, name, self.instrument_type, self.currency
         )
     }
 }

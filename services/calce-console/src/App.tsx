@@ -4,7 +4,11 @@ import AppLayout from './layouts/AppLayout'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import OrganizationsPage from './pages/OrganizationsPage'
+import OrganizationDetailPage from './pages/OrganizationDetailPage'
 import UsersPage from './pages/UsersPage'
+import UserDetailPage from './pages/UserDetailPage'
+import FxRateDetailPage from './pages/FxRateDetailPage'
+import FxRatesPage from './pages/FxRatesPage'
 import InstrumentsPage from './pages/InstrumentsPage'
 import InstrumentDetailPage from './pages/InstrumentDetailPage'
 import DesignSystemPage from './pages/DesignSystemPage'
@@ -21,7 +25,11 @@ export default function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/organizations" element={<OrganizationsPage />} />
+          <Route path="/organizations/:id" element={<OrganizationDetailPage />} />
           <Route path="/users" element={<UsersPage />} />
+          <Route path="/users/:id" element={<UserDetailPage />} />
+          <Route path="/fx-rates" element={<FxRatesPage />} />
+          <Route path="/fx-rates/:from/:to" element={<FxRateDetailPage />} />
           <Route path="/instruments" element={<InstrumentsPage />} />
           <Route path="/instruments/:id" element={<InstrumentDetailPage />} />
           <Route path="/design/system" element={<DesignSystemPage />} />

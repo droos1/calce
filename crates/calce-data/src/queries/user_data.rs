@@ -18,6 +18,7 @@ pub struct Organization {
     pub external_id: String,
     pub name: Option<String>,
     pub created_at: DateTime<Utc>,
+    pub user_count: i64,
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize)]
@@ -28,6 +29,14 @@ pub struct User {
     pub name: Option<String>,
     pub organization_id: Option<String>,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub struct AccountSummary {
+    pub id: i64,
+    pub label: String,
+    pub currency: String,
+    pub trade_count: i64,
 }
 
 pub struct UserDataRepo {
@@ -107,12 +116,15 @@ impl UserDataRepo {
 
     pub async fn list_users_with_trade_counts(&self) -> DataResult<Vec<UserRow>> {
         let rows = sqlx::query_as::<_, UserRow>(
-            "SELECT u.external_id, u.email, o.external_id AS organization_id, \
-                    COUNT(t.id)::BIGINT as trade_count \
+            "SELECT u.external_id, u.email, u.name, \
+                    o.external_id AS organization_id, o.name AS organization_name, \
+                    COUNT(DISTINCT t.id)::BIGINT AS trade_count, \
+                    COUNT(DISTINCT a.id)::BIGINT AS account_count \
              FROM users u \
              LEFT JOIN trades t ON u.id = t.user_id \
              LEFT JOIN organizations o ON u.organization_id = o.id \
-             GROUP BY u.external_id, u.email, o.external_id \
+             LEFT JOIN accounts a ON u.id = a.user_id \
+             GROUP BY u.external_id, u.email, u.name, o.external_id, o.name \
              ORDER BY u.external_id",
         )
         .fetch_all(&self.pool)
@@ -149,6 +161,23 @@ impl UserDataRepo {
         .fetch_one(&self.pool)
         .await?;
         Ok(TradeId::new(id))
+    }
+
+    pub async fn get_user_accounts(&self, external_id: &str) -> DataResult<Vec<AccountSummary>> {
+        let rows = sqlx::query_as::<_, AccountSummary>(
+            "SELECT a.id, a.label, a.currency, \
+                    COUNT(t.id)::BIGINT AS trade_count \
+             FROM accounts a \
+             JOIN users u ON a.user_id = u.id \
+             LEFT JOIN trades t ON t.account_id = a.id \
+             WHERE u.external_id = $1 \
+             GROUP BY a.id, a.label, a.currency \
+             ORDER BY a.label",
+        )
+        .bind(external_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
     }
 
     // ── CRUD operations ──────────────────────────────────────────────────
@@ -218,7 +247,12 @@ impl UserDataRepo {
 
     pub async fn find_all_organizations(&self) -> DataResult<Vec<Organization>> {
         let orgs = sqlx::query_as::<_, Organization>(
-            "SELECT external_id, name, created_at FROM organizations ORDER BY created_at",
+            "SELECT o.external_id, o.name, o.created_at, \
+                    COUNT(u.id) AS user_count \
+             FROM organizations o \
+             LEFT JOIN users u ON u.organization_id = o.id \
+             GROUP BY o.id \
+             ORDER BY o.created_at",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -227,7 +261,12 @@ impl UserDataRepo {
 
     pub async fn get_organization(&self, external_id: &str) -> DataResult<Organization> {
         sqlx::query_as::<_, Organization>(
-            "SELECT external_id, name, created_at FROM organizations WHERE external_id = $1",
+            "SELECT o.external_id, o.name, o.created_at, \
+                    COUNT(u.id) AS user_count \
+             FROM organizations o \
+             LEFT JOIN users u ON u.organization_id = o.id \
+             WHERE o.external_id = $1 \
+             GROUP BY o.id",
         )
         .bind(external_id)
         .fetch_optional(&self.pool)
@@ -252,8 +291,11 @@ impl UserDataRepo {
 pub struct UserRow {
     pub external_id: String,
     pub email: Option<String>,
+    pub name: Option<String>,
     pub organization_id: Option<String>,
+    pub organization_name: Option<String>,
     pub trade_count: Option<i64>,
+    pub account_count: Option<i64>,
 }
 
 #[derive(sqlx::FromRow)]

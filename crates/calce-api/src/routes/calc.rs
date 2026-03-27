@@ -12,15 +12,16 @@ use calce_core::domain::user::UserId;
 use calce_core::outcome::{Outcome, Warning, WarningCode};
 use calce_core::reports::portfolio::PortfolioReport;
 use calce_core::services::market_data::MarketDataService;
-use calce_data::market_data_store::InstrumentSummary;
+use calce_data::market_data_store::{FxRateSummary, InstrumentSummary};
 use calce_data::types::DataStats;
-use calce_data::user_data_store::UserSummary;
+use calce_data::queries::user_data::{AccountSummary, UserDataRepo};
+use calce_data::user_data_store::{PositionSummary, UserSummary};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_PAGE_SIZE: usize = 50;
 
-use crate::auth::Auth;
+use crate::auth::{self, Auth};
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -34,7 +35,22 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/v1/data/stats", get(data_stats))
         .route("/v1/data/users", get(data_users))
+        .route("/v1/data/users/{user_id}", get(data_user))
+        .route(
+            "/v1/data/users/{user_id}/accounts",
+            get(user_accounts),
+        )
+        .route(
+            "/v1/data/users/{user_id}/positions",
+            get(user_positions),
+        )
+        .route("/v1/data/fx-rates", get(data_fx_rates))
+        .route(
+            "/v1/data/fx-rates/{from}/{to}/history",
+            get(fx_rate_history),
+        )
         .route("/v1/data/instruments", get(data_instruments))
+        .route("/v1/data/instruments/{id}", get(data_instrument))
         .route(
             "/v1/data/instruments/{instrument_id}/prices",
             get(instrument_prices),
@@ -213,6 +229,7 @@ async fn data_users(
             .filter(|u| {
                 u.id.to_lowercase().contains(&q)
                     || u.email.as_deref().unwrap_or("").to_lowercase().contains(&q)
+                    || u.name.as_deref().unwrap_or("").to_lowercase().contains(&q)
             })
             .collect()
     } else {
@@ -232,6 +249,40 @@ async fn data_users(
     }))
 }
 
+async fn data_user(
+    Auth(ctx): Auth,
+    State(state): State<AppState>,
+    Path(user_id): Path<String>,
+) -> Result<Json<UserSummary>, ApiError> {
+    state
+        .user_data
+        .get_user(&ctx, &user_id)
+        .map(Json)
+        .ok_or_else(|| ApiError::Data(calce_data::error::DataError::NotFound("user".into())))
+}
+
+async fn user_accounts(
+    Auth(ctx): Auth,
+    State(state): State<AppState>,
+    Path(user_id): Path<String>,
+) -> Result<Json<Vec<AccountSummary>>, ApiError> {
+    auth::require_admin(&ctx)?;
+    let pool = state.require_pool()?;
+    let repo = UserDataRepo::new(pool.clone());
+    let accounts = repo.get_user_accounts(&user_id).await?;
+    Ok(Json(accounts))
+}
+
+async fn user_positions(
+    Auth(ctx): Auth,
+    State(state): State<AppState>,
+    Path(user_id): Path<String>,
+) -> Result<Json<Vec<PositionSummary>>, ApiError> {
+    let user_id = UserId::new(user_id);
+    let positions = state.user_data.positions_for_user(&ctx, &user_id)?;
+    Ok(Json(positions))
+}
+
 async fn data_instruments(
     Auth(_ctx): Auth,
     State(state): State<AppState>,
@@ -242,7 +293,7 @@ async fn data_instruments(
         let q = q.to_lowercase();
         all.into_iter()
             .filter(|i| {
-                i.id.to_lowercase().contains(&q)
+                i.ticker.to_lowercase().contains(&q)
                     || i.name.as_deref().unwrap_or("").to_lowercase().contains(&q)
                     || i.instrument_type.to_lowercase().contains(&q)
                     || i.currency.to_lowercase().contains(&q)
@@ -263,6 +314,102 @@ async fn data_instruments(
         offset: params.offset,
         limit: params.limit,
     }))
+}
+
+#[derive(Deserialize)]
+struct FxRateParams {
+    #[serde(default)]
+    offset: usize,
+    #[serde(default = "default_page_size")]
+    limit: usize,
+    #[serde(default)]
+    search: Option<String>,
+    #[serde(default)]
+    from_currency: Option<String>,
+    #[serde(default)]
+    to_currency: Option<String>,
+}
+
+async fn data_fx_rates(
+    Auth(_ctx): Auth,
+    State(state): State<AppState>,
+    Query(params): Query<FxRateParams>,
+) -> Result<Json<PaginatedResponse<FxRateSummary>>, ApiError> {
+    let all = state.market_data.list_fx_rates();
+    let filtered: Vec<_> = all
+        .into_iter()
+        .filter(|r| {
+            if let Some(ref q) = params.search {
+                let q = q.to_lowercase();
+                if !r.pair.to_lowercase().contains(&q)
+                    && !r.from_currency.to_lowercase().contains(&q)
+                    && !r.to_currency.to_lowercase().contains(&q)
+                {
+                    return false;
+                }
+            }
+            if let Some(ref f) = params.from_currency {
+                let f = f.to_uppercase();
+                if r.from_currency != f {
+                    return false;
+                }
+            }
+            if let Some(ref t) = params.to_currency {
+                let t = t.to_uppercase();
+                if r.to_currency != t {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+    let total = filtered.len();
+    let items = filtered
+        .into_iter()
+        .skip(params.offset)
+        .take(params.limit)
+        .collect();
+    Ok(Json(PaginatedResponse {
+        items,
+        total,
+        offset: params.offset,
+        limit: params.limit,
+    }))
+}
+
+#[derive(Deserialize)]
+struct FxRateHistoryPath {
+    from: String,
+    to: String,
+}
+
+async fn fx_rate_history(
+    Auth(_ctx): Auth,
+    State(state): State<AppState>,
+    Path(path): Path<FxRateHistoryPath>,
+    Query(params): Query<PriceHistoryParams>,
+) -> Result<Json<Vec<PricePoint>>, ApiError> {
+    let from = parse_currency(&path.from)?;
+    let to = parse_currency(&path.to)?;
+    let md = state.market_data.market_data();
+    let history = md.get_fx_rate_history_range(from, to, params.from, params.to);
+    let points: Vec<PricePoint> = history
+        .into_iter()
+        .map(|(date, rate)| PricePoint { date, price: rate })
+        .collect();
+    Ok(Json(points))
+}
+
+async fn data_instrument(
+    Auth(_ctx): Auth,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<InstrumentSummary>, ApiError> {
+    state
+        .market_data
+        .get_instrument(id)
+        .map(Json)
+        .ok_or_else(|| ApiError::Data(calce_data::error::DataError::NotFound("instrument".into())))
 }
 
 #[derive(Deserialize)]

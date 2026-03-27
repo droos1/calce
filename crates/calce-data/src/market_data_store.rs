@@ -11,8 +11,18 @@ pub struct MarketDataStore {
 }
 
 #[derive(Clone, Serialize)]
+pub struct FxRateSummary {
+    pub from_currency: String,
+    pub to_currency: String,
+    pub pair: String,
+    pub data_points: usize,
+    pub latest_rate: Option<f64>,
+}
+
+#[derive(Clone, Serialize)]
 pub struct InstrumentSummary {
-    pub id: String,
+    pub id: i64,
+    pub ticker: String,
     pub currency: String,
     pub name: Option<String>,
     pub instrument_type: String,
@@ -25,8 +35,10 @@ impl MarketDataStore {
         let instruments: Vec<InstrumentSummary> = md
             .instrument_ids()
             .into_iter()
-            .map(|id| InstrumentSummary {
-                id: id.as_str().to_owned(),
+            .enumerate()
+            .map(|(i, id)| InstrumentSummary {
+                id: i64::try_from(i + 1).unwrap_or(0),
+                ticker: id.as_str().to_owned(),
                 currency: String::new(),
                 name: None,
                 instrument_type: "other".to_owned(),
@@ -64,6 +76,10 @@ impl MarketDataStore {
         self.instruments.clone()
     }
 
+    pub fn get_instrument(&self, id: i64) -> Option<InstrumentSummary> {
+        self.instruments.iter().find(|i| i.id == id).cloned()
+    }
+
     pub fn instrument_count(&self) -> i64 {
         i64::try_from(self.instruments.len()).unwrap_or(0)
     }
@@ -74,6 +90,20 @@ impl MarketDataStore {
 
     pub fn fx_rate_count(&self) -> i64 {
         i64::try_from(self.market_data.fx_rate_count()).unwrap_or(0)
+    }
+
+    pub fn list_fx_rates(&self) -> Vec<FxRateSummary> {
+        self.market_data
+            .fx_rate_pairs()
+            .into_iter()
+            .map(|(from, to, data_points, latest_rate)| FxRateSummary {
+                from_currency: from.as_str().to_owned(),
+                to_currency: to.as_str().to_owned(),
+                pair: format!("{}/{}", from.as_str(), to.as_str()),
+                data_points,
+                latest_rate,
+            })
+            .collect()
     }
 }
 

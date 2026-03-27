@@ -32,18 +32,22 @@ pub async fn load_from_postgres(pool: &PgPool) -> DataResult<(MarketDataStore, U
         .map(|row| UserSummary {
             id: row.external_id,
             email: row.email,
+            name: row.name,
             organization_id: row.organization_id,
+            organization_name: row.organization_name,
             trade_count: row.trade_count.unwrap_or(0),
+            account_count: row.account_count.unwrap_or(0),
         })
         .collect();
 
     let instruments: Vec<InstrumentSummary> = instruments_raw
         .into_iter()
-        .map(|(id, currency, name, instrument_type, alloc_json)| {
+        .map(|(id, ticker, currency, name, instrument_type, alloc_json)| {
             let allocations: HashMap<String, Vec<(String, f64)>> =
                 parse_allocations_json(&alloc_json);
             InstrumentSummary {
                 id,
+                ticker,
                 currency,
                 name,
                 instrument_type,
@@ -60,7 +64,7 @@ pub async fn load_from_postgres(pool: &PgPool) -> DataResult<(MarketDataStore, U
         md.add_fx_rate(rate, date);
     }
     for instr in &instruments {
-        let iid = InstrumentId::new(&instr.id);
+        let iid = InstrumentId::new(&instr.ticker);
         md.add_instrument_type(&iid, InstrumentType::from_str_lossy(&instr.instrument_type));
         for (dimension, weights) in &instr.allocations {
             for (key, weight) in weights {

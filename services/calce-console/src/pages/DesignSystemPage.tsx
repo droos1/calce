@@ -1,4 +1,5 @@
 import Card from '../components/Card'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 const spacing = [
   ['xs', '2px'],
@@ -50,6 +51,7 @@ function Swatch({ label, variable }: { label: string; variable: string }) {
 }
 
 export default function DesignSystemPage() {
+  usePageTitle('Design Tokens')
   return (
     <div className="ds-page">
       <div className="ds-page__header">

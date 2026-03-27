@@ -78,7 +78,7 @@ impl DataService {
         self.instruments
             .iter()
             .filter(|i| {
-                i.id.to_lowercase().contains(&q)
+                i.ticker.to_lowercase().contains(&q)
                     || i.name
                         .as_deref()
                         .is_some_and(|n| n.to_lowercase().contains(&q))

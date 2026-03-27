@@ -1,9 +1,12 @@
 import type {
+  AccountSummary,
   DataStats,
+  FxRateSummary,
   Instrument,
   LoginResponse,
   Organization,
   PaginatedResponse,
+  PositionSummary,
   Price,
   User,
 } from "./types";
@@ -124,6 +127,10 @@ export const api = {
     return fetchApi<PaginatedResponse<Instrument>>(`/v1/data/instruments${qs}`);
   },
 
+  getInstrument(id: number): Promise<Instrument> {
+    return fetchApi<Instrument>(`/v1/data/instruments/${id}`);
+  },
+
   getInstrumentPrices(
     instrumentId: string,
     params?: { from?: string; to?: string },
@@ -132,16 +139,53 @@ export const api = {
     return fetchApi<Price[]>(`/v1/data/instruments/${instrumentId}/prices${qs}`);
   },
 
+  getUser(id: string): Promise<User> {
+    return fetchApi<User>(`/v1/data/users/${id}`);
+  },
+
   getUsers(params: {
     offset?: number;
     limit?: number;
     search?: string;
+    organization_id?: string;
   }): Promise<PaginatedResponse<User>> {
     const qs = buildQuery(params);
     return fetchApi<PaginatedResponse<User>>(`/v1/data/users${qs}`);
   },
 
+  getUserAccounts(userId: string): Promise<AccountSummary[]> {
+    return fetchApi<AccountSummary[]>(`/v1/data/users/${userId}/accounts`);
+  },
+
+  getUserPositions(userId: string): Promise<PositionSummary[]> {
+    return fetchApi<PositionSummary[]>(`/v1/data/users/${userId}/positions`);
+  },
+
+  getFxRates(params: {
+    offset?: number;
+    limit?: number;
+    search?: string;
+    from_currency?: string;
+    to_currency?: string;
+  }): Promise<PaginatedResponse<FxRateSummary>> {
+    const qs = buildQuery(params);
+    return fetchApi<PaginatedResponse<FxRateSummary>>(`/v1/data/fx-rates${qs}`);
+  },
+
+  getFxRateHistory(
+    from: string,
+    to: string,
+    params: { from?: string; to?: string },
+  ): Promise<Price[]> {
+    const qs = buildQuery(params);
+    return fetchApi<Price[]>(`/v1/data/fx-rates/${from}/${to}/history${qs}`);
+  },
+
   getOrganizations(): Promise<Organization[]> {
     return fetchApi<Organization[]>("/v1/organizations");
+  },
+
+  getOrganization(orgId: string): Promise<Organization> {
+    return fetchApi<Organization>(`/v1/organizations/${orgId}`);
   },
 };

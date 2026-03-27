@@ -5,26 +5,14 @@ import {
   IconBuilding,
   IconUsers,
   IconChart,
+  IconCurrency,
   IconPalette,
   IconLogout,
-  IconSun,
-  IconMoon,
 } from './icons'
-import { useState, useEffect } from 'react'
-
-function getTheme(): 'light' | 'dark' {
-  return (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') || 'light'
-}
+import ThemeToggle from './ThemeToggle'
 
 function Sidebar() {
   const { user, logout } = useAuth()
-  const [theme, setTheme] = useState<'light' | 'dark'>(getTheme)
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
-  }, [theme])
-
-  const toggleTheme = () => setTheme((t) => (t === 'light' ? 'dark' : 'light'))
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     ['ds-sidebar__item', isActive && 'ds-sidebar__item--active'].filter(Boolean).join(' ')
@@ -50,6 +38,9 @@ function Sidebar() {
           <NavLink to="/instruments" className={linkClass}>
             <IconChart /> Instruments
           </NavLink>
+          <NavLink to="/fx-rates" className={linkClass}>
+            <IconCurrency /> FX Rates
+          </NavLink>
         </div>
         <div className="ds-sidebar__section">
           <div className="ds-sidebar__section-title">Design</div>
@@ -65,9 +56,7 @@ function Sidebar() {
         </div>
       </nav>
       <div className="ds-sidebar__user">
-        <button className="ds-sidebar__item ds-sidebar__user-action" onClick={toggleTheme}>
-          {theme === 'light' ? <IconMoon /> : <IconSun />}
-        </button>
+        <ThemeToggle className="ds-sidebar__item ds-sidebar__user-action" />
         <span className="ds-sidebar__user-name">
           {user?.email || 'Admin'}
         </span>

@@ -266,6 +266,52 @@ impl InMemoryMarketDataService {
         self.prices.len()
     }
 
+    /// Return summary info for each FX rate pair: (from, to, data_point_count, latest_rate).
+    #[must_use]
+    #[allow(clippy::cast_possible_wrap)]
+    pub fn fx_rate_pairs(&self) -> Vec<(Currency, Currency, usize, Option<f64>)> {
+        let mut pairs: Vec<_> = self
+            .fx_rates
+            .iter()
+            .map(|(&(from, to), arr)| {
+                let count = arr.iter().filter(|x| !x.is_nan()).count();
+                let latest = arr.iter().rposition(|x| !x.is_nan()).map(|i| arr[i]);
+                (from, to, count, latest)
+            })
+            .collect();
+        pairs.sort_by(|a, b| {
+            a.0.as_str()
+                .cmp(b.0.as_str())
+                .then_with(|| a.1.as_str().cmp(b.1.as_str()))
+        });
+        pairs
+    }
+
+    /// Return FX rate history for a currency pair within a date range.
+    #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+    pub fn get_fx_rate_history_range(
+        &self,
+        from_ccy: Currency,
+        to_ccy: Currency,
+        date_from: NaiveDate,
+        date_to: NaiveDate,
+    ) -> Vec<(NaiveDate, f64)> {
+        let Some(arr) = self.fx_rates.get(&(from_ccy, to_ccy)) else {
+            return Vec::new();
+        };
+        let start = (day_ord(date_from) - self.base_day).max(0) as usize;
+        let end = ((day_ord(date_to) - self.base_day + 1).max(0) as usize).min(self.num_days);
+
+        (start..end)
+            .filter(|&i| !arr[i].is_nan())
+            .map(|i| {
+                let d = NaiveDate::from_num_days_from_ce_opt(self.base_day + i as i32)
+                    .unwrap_or(NaiveDate::MIN);
+                (d, arr[i])
+            })
+            .collect()
+    }
+
     #[must_use]
     pub fn instrument_ids(&self) -> Vec<InstrumentId> {
         let mut ids: Vec<_> = self.prices.keys().cloned().collect();
