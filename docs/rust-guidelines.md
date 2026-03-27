@@ -206,6 +206,26 @@ Don't implement traits speculatively — add them when needed.
 
 Don't use `unsafe` to skip trivial checks. The cost of safe validation on small data (e.g. `from_utf8` on 3 bytes) is negligible, and `unsafe` makes code harder to audit and maintain. Only reach for `unsafe` when profiling proves a safe alternative is a bottleneck.
 
+## No Panics in Production Code
+
+Production code must never panic. Enforce with crate-level deny lints:
+
+```rust
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::expect_used)]
+#![deny(clippy::panic)]
+```
+
+Use `Result`/`Option` propagation (`?`) for all fallible operations, including cache deserialization, parsing, and external data.
+
+**Exceptions where panicking is acceptable:**
+
+- **`main()` / startup** — if configuration required to operate the system is missing or invalid (env vars, DB connection, port binding), panicking with a clear message is fine. There's nothing useful the server can do without these.
+- **Validated constructors** — `Currency::new("USD")` panics on invalid input, but is only used with known-valid constants. Document with `# Panics`. The fallible `try_new()` exists for runtime data.
+- **Test code** — `.unwrap()` / `.expect()` in `#[cfg(test)]` modules are fine.
+
+For anything that processes runtime data (user input, files, cache, external APIs), always return errors — never panic.
+
 ## Error Handling Patterns
 
 **Domain types define their own small errors.** The top-level `CalceError` aggregates them via `#[from]`:

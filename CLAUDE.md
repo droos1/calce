@@ -69,6 +69,10 @@ Don't restate the function/field/type name as a sentence — if the doc comment 
 | `invoke dev` | Start DB + API (hot-reload) + open explorer |
 | `invoke ai` | Interactive AI analyst chat (requires DB + `ANTHROPIC_API_KEY`) |
 
+### Local dev credentials
+
+Local admin account (created by both `seed-db` and `njorda-import`): `admin@njorda.se` / `protectme`
+
 ### Adding new services
 
 When adding a new service or crate with Python code, wire it into the top-level invoke tasks:

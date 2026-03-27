@@ -25,6 +25,9 @@ benchmarks/**/Cargo.lock
 # Cache
 .cache/
 
+# Node / Frontend
+node_modules/
+
 # Python
 .venv/
 *.so

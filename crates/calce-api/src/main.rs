@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::routing::get;
+use calce_data::auth::AuthConfig;
+use calce_data::auth::api_key::ApiKeyCache;
 use calce_data::loader;
 use calce_data::market_data_store::MarketDataStore;
 use calce_data::user_data_store::UserDataStore;
@@ -12,6 +14,7 @@ use tracing_subscriber::EnvFilter;
 
 mod auth;
 mod error;
+mod rate_limit;
 mod routes;
 mod state;
 
@@ -26,6 +29,8 @@ fn build_router(state: AppState) -> Router {
         .merge(routes::calc_routes())
         .merge(routes::user_routes())
         .merge(routes::organization_routes())
+        .merge(routes::auth_routes())
+        .merge(routes::api_key_routes())
         .layer(CorsLayer::very_permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -143,6 +148,8 @@ fn create_njorda_cache_service() -> MarketDataStore {
 
 #[tokio::main]
 async fn main() {
+    dotenvy::dotenv().ok();
+
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
@@ -166,10 +173,15 @@ async fn main() {
         }
     };
 
+    let auth_config = AuthConfig::from_env();
+
     let state = AppState {
         market_data: Arc::new(market_data),
         user_data: Arc::new(user_data),
         pool,
+        auth_config,
+        api_key_cache: ApiKeyCache::new(),
+        auth_rate_limiter: rate_limit::create_auth_rate_limiter(),
     };
 
     let app = build_router(state);
@@ -190,8 +202,13 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
+    use calce_data::auth::{Role, jwt};
     use http_body_util::BodyExt;
+    use std::sync::LazyLock;
     use tower::ServiceExt;
+
+    /// Shared test config so all tests use the same JWT keys.
+    static TEST_AUTH_CONFIG: LazyLock<AuthConfig> = LazyLock::new(AuthConfig::test_default);
 
     fn test_state() -> AppState {
         let market_data = MarketDataStore::from_memory(seed::seed_market_data());
@@ -200,7 +217,15 @@ mod tests {
             market_data: Arc::new(market_data),
             user_data: Arc::new(user_data),
             pool: None,
+            auth_config: TEST_AUTH_CONFIG.clone(),
+            api_key_cache: ApiKeyCache::new(),
+            auth_rate_limiter: rate_limit::create_auth_rate_limiter(),
         }
+    }
+
+    /// Mint a test JWT for the given user and role.
+    fn test_token(user_id: &str, role: &Role) -> String {
+        jwt::encode_access_token(user_id, role, None, &TEST_AUTH_CONFIG.jwt_encoding_key).unwrap()
     }
 
     async fn get(uri: &str, headers: &[(&str, &str)]) -> (StatusCode, serde_json::Value) {
@@ -216,17 +241,25 @@ mod tests {
         (status, json)
     }
 
-    fn auth_headers() -> Vec<(&'static str, &'static str)> {
-        vec![("x-user-id", "alice"), ("x-role", "admin")]
+    fn auth_headers() -> Vec<(String, String)> {
+        let token = test_token("alice", &Role::Admin);
+        vec![("authorization".to_owned(), format!("Bearer {token}"))]
+    }
+
+    async fn get_authed(uri: &str) -> (StatusCode, serde_json::Value) {
+        let headers = auth_headers();
+        let refs: Vec<(&str, &str)> = headers
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        get(uri, &refs).await
     }
 
     #[tokio::test]
     async fn market_value_returns_positions_and_total() {
-        let (status, body) = get(
-            "/v1/users/alice/market-value?as_of_date=2025-03-14&base_currency=SEK",
-            &auth_headers(),
-        )
-        .await;
+        let (status, body) =
+            get_authed("/v1/users/alice/market-value?as_of_date=2025-03-14&base_currency=SEK")
+                .await;
 
         assert_eq!(status, StatusCode::OK);
         assert!(body["data"]["total"]["amount"].is_number());
@@ -246,11 +279,9 @@ mod tests {
 
     #[tokio::test]
     async fn market_value_bad_currency_returns_400() {
-        let (status, body) = get(
-            "/v1/users/alice/market-value?as_of_date=2025-03-14&base_currency=NOPE",
-            &auth_headers(),
-        )
-        .await;
+        let (status, body) =
+            get_authed("/v1/users/alice/market-value?as_of_date=2025-03-14&base_currency=NOPE")
+                .await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["error"], "BAD_REQUEST");
@@ -258,11 +289,8 @@ mod tests {
 
     #[tokio::test]
     async fn portfolio_report_returns_mv_and_changes() {
-        let (status, body) = get(
-            "/v1/users/alice/portfolio?as_of_date=2025-03-14&base_currency=SEK",
-            &auth_headers(),
-        )
-        .await;
+        let (status, body) =
+            get_authed("/v1/users/alice/portfolio?as_of_date=2025-03-14&base_currency=SEK").await;
 
         assert_eq!(status, StatusCode::OK);
         assert!(body["data"]["market_value"]["total"]["amount"].is_number());
@@ -271,11 +299,9 @@ mod tests {
 
     #[tokio::test]
     async fn volatility_returns_result() {
-        let (status, body) = get(
-            "/v1/instruments/AAPL/volatility?as_of_date=2025-03-14&lookback_days=365",
-            &auth_headers(),
-        )
-        .await;
+        let (status, body) =
+            get_authed("/v1/instruments/AAPL/volatility?as_of_date=2025-03-14&lookback_days=365")
+                .await;
 
         assert_eq!(status, StatusCode::OK);
         assert!(body["annualized_volatility"].is_number());
@@ -287,11 +313,8 @@ mod tests {
 
     #[tokio::test]
     async fn volatility_defaults_lookback_to_3_years() {
-        let (status, body) = get(
-            "/v1/instruments/AAPL/volatility?as_of_date=2025-03-14",
-            &auth_headers(),
-        )
-        .await;
+        let (status, body) =
+            get_authed("/v1/instruments/AAPL/volatility?as_of_date=2025-03-14").await;
 
         assert_eq!(status, StatusCode::OK);
         assert!(body["annualized_volatility"].is_number());
@@ -299,11 +322,8 @@ mod tests {
 
     #[tokio::test]
     async fn volatility_unknown_instrument_returns_error() {
-        let (status, _) = get(
-            "/v1/instruments/DOESNOTEXIST/volatility?as_of_date=2025-03-14",
-            &auth_headers(),
-        )
-        .await;
+        let (status, _) =
+            get_authed("/v1/instruments/DOESNOTEXIST/volatility?as_of_date=2025-03-14").await;
 
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     }
@@ -324,7 +344,7 @@ mod tests {
         let (status, _) = get("/v1/data/stats", &[]).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-        let (status, body) = get("/v1/data/stats", &auth_headers()).await;
+        let (status, body) = get_authed("/v1/data/stats").await;
         assert_eq!(status, StatusCode::OK);
         assert!(body["instrument_count"].is_number());
     }
@@ -334,7 +354,7 @@ mod tests {
         let (status, _) = get("/v1/data/instruments", &[]).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-        let (status, body) = get("/v1/data/instruments", &auth_headers()).await;
+        let (status, body) = get_authed("/v1/data/instruments").await;
         assert_eq!(status, StatusCode::OK);
         assert!(body["items"].as_array().is_some());
         assert!(body["total"].is_number());
@@ -355,11 +375,8 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-        let (status, body) = get(
-            "/v1/data/instruments/AAPL/prices?from=2025-01-01&to=2025-03-14",
-            &auth_headers(),
-        )
-        .await;
+        let (status, body) =
+            get_authed("/v1/data/instruments/AAPL/prices?from=2025-01-01&to=2025-03-14").await;
         assert_eq!(status, StatusCode::OK);
         assert!(body.as_array().is_some());
     }

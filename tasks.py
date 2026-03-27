@@ -2,14 +2,26 @@ import os
 import subprocess
 import sys
 import time as _time
+from pathlib import Path
 
 from invoke import task
+
+# Load .env from project root if present
+_dotenv = Path(__file__).parent / ".env"
+if _dotenv.exists():
+    for line in _dotenv.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            os.environ.setdefault(key.strip(), value.strip())
 
 PYTHON_CRATE = "crates/calce-python"
 MATURIN_MANIFEST = f"{PYTHON_CRATE}/Cargo.toml"
 API_PORT = 35701
+CONSOLE_PORT = 38100
 CALCE_DB = "services/calce-db"
 CALCE_AI = "services/calce-ai"
+CALCE_CONSOLE = "services/calce-console"
 
 # All Python directories for linting/formatting
 PYTHON_DIRS = "services/ crates/calce-python/tests/ tools/"
@@ -65,8 +77,20 @@ def explorer(c):
 
 
 @task
+def console(c):
+    """Start the admin console frontend (Vite dev server)."""
+    c.run(f"cd {CALCE_CONSOLE} && npm run dev", pty=True)
+
+
+@task
+def console_build(c):
+    """Build the admin console for production."""
+    c.run(f"cd {CALCE_CONSOLE} && npm run build", pty=True)
+
+
+@task
 def dev(c):
-    """Start full dev environment: DB, API (hot-reload), and open explorer."""
+    """Start full dev environment: DB, API (hot-reload), console, and open browser."""
     # 1. Ensure DB is running + migrated
     print("Starting database...")
     c.run("docker compose up -d postgres", hide="both")
@@ -80,12 +104,21 @@ def dev(c):
         env={**os.environ, **env},
     )
 
-    def _kill_api():
-        api_proc.terminate()
-        try:
-            api_proc.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            api_proc.kill()
+    # 3. Start console frontend in background
+    print("Starting console frontend...")
+    console_proc = subprocess.Popen(
+        ["npm", "run", "dev"],
+        cwd=CALCE_CONSOLE,
+        env={**os.environ},
+    )
+
+    def _cleanup():
+        for proc in [api_proc, console_proc]:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
         # cargo watch spawns children in separate process groups;
         # clean up any orphans still bound to our port.
         subprocess.run(
@@ -93,7 +126,7 @@ def dev(c):
             shell=True,
         )
 
-    # 3. Wait for API to be ready, then open explorer
+    # 4. Wait for API to be ready, then open console
     print(f"Waiting for API on port {API_PORT}...")
     try:
         import urllib.request
@@ -105,18 +138,18 @@ def dev(c):
                 _time.sleep(1)
         else:
             print("Warning: API did not respond within 60s, opening browser anyway")
-        print(f"Opening explorer at http://localhost:{API_PORT}")
-        c.run(f"open http://localhost:{API_PORT}", hide="both")
+        print(f"Opening console at http://localhost:{CONSOLE_PORT}")
+        c.run(f"open http://localhost:{CONSOLE_PORT}", hide="both")
     except KeyboardInterrupt:
-        _kill_api()
+        _cleanup()
         sys.exit(0)
 
-    # 4. Keep running until Ctrl-C
+    # 5. Keep running until Ctrl-C
     try:
         api_proc.wait()
     except KeyboardInterrupt:
         print("\nShutting down...")
-        _kill_api()
+        _cleanup()
 
 
 # ── Database ────────────────────────────────────────────────────────────

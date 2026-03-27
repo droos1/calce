@@ -12,6 +12,7 @@ dev = [
     "anthropic>=0.45",
     "python-dotenv>=1.0",
     "psycopg2-binary>=2.9",
+    "argon2-cffi>=23.1",
 ]
 
 [tool.ruff]

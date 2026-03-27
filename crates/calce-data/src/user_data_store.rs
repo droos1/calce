@@ -171,6 +171,7 @@ mod tests {
         SecurityContext {
             user_id: UserId::new("alice"),
             role: Role::Admin,
+            org_id: None,
         }
     }
 
@@ -178,6 +179,7 @@ mod tests {
         SecurityContext {
             user_id: UserId::new(user),
             role: Role::User,
+            org_id: None,
         }
     }
 

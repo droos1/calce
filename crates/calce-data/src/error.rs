@@ -1,5 +1,6 @@
 use calce_core::domain::user::UserId;
 use calce_core::error::CalceError;
+use chrono::{DateTime, Utc};
 use sqlx::Error as SqlxError;
 
 pub type DataResult<T> = Result<T, DataError>;
@@ -30,6 +31,18 @@ pub enum DataError {
 
     #[error("{0}")]
     Conflict(String),
+
+    #[error("Invalid email or password")]
+    InvalidCredentials,
+
+    #[error("Account locked until {retry_after}")]
+    AccountLocked { retry_after: DateTime<Utc> },
+
+    #[error("Invalid or expired refresh token")]
+    InvalidRefreshToken,
+
+    #[error("Refresh token reuse detected — session revoked")]
+    TokenReplayDetected,
 }
 
 impl DataError {

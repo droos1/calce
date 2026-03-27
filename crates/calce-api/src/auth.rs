@@ -3,54 +3,62 @@ use axum::http::StatusCode;
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Response};
 use calce_core::domain::user::UserId;
-use calce_data::auth::{Role, SecurityContext};
+use calce_data::auth::SecurityContext;
+use calce_data::auth::middleware;
 use calce_data::error::DataError;
 use serde_json::json;
 
 use crate::error::ApiError;
+use crate::state::AppState;
 
 pub struct Auth(pub SecurityContext);
 
 #[derive(Debug)]
 pub enum AuthError {
-    MissingUserId,
+    MissingToken,
+    InvalidToken,
 }
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
-        let body = json!({ "error": "UNAUTHORIZED", "message": "Missing X-User-Id header" });
+        let message = match self {
+            AuthError::MissingToken => "Missing Authorization: Bearer <token> header",
+            AuthError::InvalidToken => "Invalid or expired token",
+        };
+        let body = json!({ "error": "UNAUTHORIZED", "message": message });
         (StatusCode::UNAUTHORIZED, axum::Json(body)).into_response()
     }
 }
 
-impl<S: Send + Sync> FromRequestParts<S> for Auth {
+impl FromRequestParts<AppState> for Auth {
     type Rejection = AuthError;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let user_id = parts
-            .headers
-            .get("x-user-id")
-            .and_then(|v| v.to_str().ok())
-            .ok_or(AuthError::MissingUserId)?;
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        if let Some(auth_header) = parts.headers.get("authorization")
+            && let Ok(value) = auth_header.to_str()
+            && let Some(token) = value.strip_prefix("Bearer ")
+        {
+            let ctx = middleware::validate_bearer_token(
+                token,
+                &state.auth_config,
+                state.pool.as_ref(),
+                Some(&state.api_key_cache),
+            )
+            .await
+            .map_err(|_| AuthError::InvalidToken)?;
+            return Ok(Auth(ctx));
+        }
 
-        let role = parts
-            .headers
-            .get("x-role")
-            .and_then(|v| v.to_str().ok())
-            .map_or(Role::User, |r| {
-                if r.eq_ignore_ascii_case("admin") {
-                    Role::Admin
-                } else {
-                    Role::User
-                }
-            });
-
-        Ok(Auth(SecurityContext::new(UserId::new(user_id), role)))
+        Err(AuthError::MissingToken)
     }
 }
 
+/// Require unrestricted admin (human user, not org-scoped API key).
 pub fn require_admin(ctx: &SecurityContext) -> Result<(), ApiError> {
-    if ctx.is_admin() {
+    if ctx.is_unrestricted_admin() {
         Ok(())
     } else {
         Err(ApiError::Data(DataError::Unauthorized {
@@ -58,6 +66,28 @@ pub fn require_admin(ctx: &SecurityContext) -> Result<(), ApiError> {
             target: UserId::new("*"),
         }))
     }
+}
+
+/// Require admin with access to a specific organization.
+/// Human admins pass unconditionally; org-scoped admins (API keys)
+/// must belong to the requested org.
+pub fn require_org_admin(ctx: &SecurityContext, target_org: &str) -> Result<(), ApiError> {
+    if !ctx.is_admin() {
+        return Err(ApiError::Data(DataError::Unauthorized {
+            requester: ctx.user_id.clone(),
+            target: UserId::new(target_org),
+        }));
+    }
+    // Org-scoped admin: must match the target org
+    if let Some(ref org_id) = ctx.org_id
+        && org_id != target_org
+    {
+        return Err(ApiError::Data(DataError::Unauthorized {
+            requester: ctx.user_id.clone(),
+            target: UserId::new(target_org),
+        }));
+    }
+    Ok(())
 }
 
 pub fn require_access(ctx: &SecurityContext, target: &str) -> Result<(), ApiError> {

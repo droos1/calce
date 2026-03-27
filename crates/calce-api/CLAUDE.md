@@ -10,8 +10,11 @@ src/
 ├── routes/
 │   ├── mod.rs        — route registration
 │   ├── calc.rs       — calculation + data exploration endpoints
-│   └── users.rs      — user CRUD endpoints (admin-only create/delete)
-├── auth.rs           — X-User-Id / X-Role header extraction → SecurityContext
+│   ├── users.rs      — user CRUD endpoints (admin-only create/delete)
+│   ├── auth.rs       — POST /auth/login, POST /auth/refresh
+│   └── api_keys.rs   — API key CRUD (admin-only)
+├── auth.rs           — JWT Bearer token extraction → SecurityContext
+├── rate_limit.rs     — per-IP token bucket rate limiter (auth endpoints)
 ├── error.rs          — CalceError → HTTP status code mapping
 ├── state.rs          — AppState (shared service references)
 └── seed.rs           — in-memory test data + seed sanity tests
@@ -40,11 +43,10 @@ When adding a new endpoint, decide which scope it belongs to:
 
 ## Authentication
 
-Header-based, extracted in `auth.rs`:
-- `X-User-Id` (required for user-scoped routes) — maps to `UserId`
-- `X-Role` (optional, defaults to `"user"`) — `"admin"` grants cross-user access
+JWT Bearer token, extracted in `auth.rs` via `Authorization: Bearer <token>`.
+See `docs/auth.md` for the full auth design (login, refresh, API keys, rate limiting).
 
-Missing `X-User-Id` on any authenticated route → 401 Unauthorized.
+Missing or invalid token on any authenticated route → 401 Unauthorized.
 
 ## Error Handling
 
@@ -56,6 +58,11 @@ Missing `X-User-Id` on any authenticated route → 401 Unauthorized.
 | `DataError::NoTradesFound`  | 404         | |
 | `DataError::NotFound`       | 404         | Generic not-found (e.g. user CRUD) |
 | `DataError::Conflict`       | 409         | Unique/FK constraint violation |
+| `DataError::InvalidCredentials` | 401     | Wrong email or password |
+| `DataError::AccountLocked`  | 423         | Too many failed login attempts |
+| `DataError::InvalidRefreshToken` | 401    | Expired or invalid refresh token |
+| `DataError::TokenReplayDetected` | 401    | Refresh token reuse — family revoked |
+| `ApiError::RateLimited`     | 429         | Per-IP rate limit exceeded |
 | `DataError::Sqlx`           | 500         | Database error |
 | `DataError::InvalidDbData`  | 500         | Corrupt data in DB |
 | `DataError::Calc(inner)`    | delegates   | Maps the inner `CalceError` |

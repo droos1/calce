@@ -9,8 +9,10 @@ from sqlalchemy import (
     ForeignKey,
     Identity,
     Index,
+    Integer,
     String,
     UniqueConstraint,
+    Uuid,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -39,6 +41,7 @@ class User(Base):
     external_id = Column(String(64), unique=True, nullable=False)
     email = Column(String(255))
     name = Column(String(200))
+    role = Column(String(20), nullable=False, server_default="user")
     organization_id = Column(BigInteger, ForeignKey("organizations.id"))
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -46,6 +49,7 @@ class User(Base):
     organization = relationship("Organization", back_populates="users")
     accounts = relationship("Account", back_populates="user")
     trades = relationship("Trade", back_populates="user")
+    credential = relationship("UserCredential", back_populates="user", uselist=False)
 
 
 class Instrument(Base):
@@ -128,3 +132,54 @@ class FxRate(Base):
     rate = Column(Float, nullable=False)
 
     __table_args__ = (CheckConstraint("rate > 0", name="fx_rates_rate_check"),)
+
+
+class UserCredential(Base):
+    __tablename__ = "user_credentials"
+
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    failed_attempts = Column(Integer, nullable=False, server_default="0")
+    locked_until = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    user = relationship("User", back_populates="credential")
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    family_id = Column(Uuid, nullable=False)
+    token_hash = Column(String(128), unique=True, nullable=False)
+    superseded_at = Column(DateTime(timezone=True))
+    revoked_at = Column(DateTime(timezone=True))
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    user = relationship("User")
+
+    __table_args__ = (
+        Index("idx_refresh_tokens_family", "family_id"),
+        Index("idx_refresh_tokens_user", "user_id"),
+    )
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
+    organization_id = Column(BigInteger, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(100), nullable=False)
+    key_prefix = Column(String(20), nullable=False)
+    key_hash = Column(String(128), unique=True, nullable=False)
+    expires_at = Column(DateTime(timezone=True))
+    revoked_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    organization = relationship("Organization")
+
+    __table_args__ = (Index("idx_api_keys_organization", "organization_id"),)

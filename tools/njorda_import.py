@@ -326,15 +326,13 @@ def main():
     org_id_map = {org_id: str(org_id) for org_id, _ in orgs_raw}
 
     # Users: (external_id, email, name, org_external_id)
-    # Anonymized
     user_rows = []
     user_org_lookup = {}  # njorda_user_id -> njorda_org_external_id
     for uid, org_id, email, first_name, last_name in users_raw:
         ext_id = str(uid)
-        anon_email = f"user_{uid}@test.calce.dev"
-        anon_name = f"User {uid}"
+        name = f"{first_name or ''} {last_name or ''}".strip() or f"User {uid}"
         org_ext_id = org_id_map.get(org_id) if org_id else None
-        user_rows.append((ext_id, anon_email, anon_name, org_ext_id))
+        user_rows.append((ext_id, email, name, org_ext_id))
         user_org_lookup[uid] = org_ext_id
 
     # Instruments: (ticker, isin, name, instrument_type, currency, allocations_json)
@@ -417,7 +415,7 @@ def main():
 
     print("Wiping existing data...")
     calce_cur.execute(
-        "TRUNCATE trades, accounts, users, organizations, prices, fx_rates, instruments RESTART IDENTITY CASCADE"
+        "TRUNCATE trades, accounts, user_credentials, refresh_tokens, users, organizations, prices, fx_rates, instruments RESTART IDENTITY CASCADE"
     )
     calce_conn.commit()
 
@@ -483,6 +481,22 @@ def main():
     # Build user external_id -> calce id map
     calce_cur.execute("SELECT external_id, id FROM users")
     user_ext_to_calce = {row[0]: row[1] for row in calce_cur.fetchall()}
+
+    # Dev admin user (admin@njorda.se / protectme)
+    from dev_admin import ensure_admin_user
+
+    _, ph = ensure_admin_user(calce_cur, calce_conn)
+
+    # All imported users get password "protectme" for dev/testing
+    password_hash = ph.hash("protectme")
+    credential_rows = [(uid, password_hash) for uid in user_ext_to_calce.values()]
+    timed_insert(
+        calce_cur,
+        "user_credentials",
+        "INSERT INTO user_credentials (user_id, password_hash) VALUES %s",
+        credential_rows,
+    )
+    calce_conn.commit()
 
     # Accounts
     # njorda_account_id -> (njorda_user_id, currency, label)
@@ -559,7 +573,7 @@ def main():
     print(f"  {len(instrument_rows):,} instruments")
     print(f"  {len(price_insert_rows):,} prices")
     print(f"  {len(fx_rows):,} fx rates")
-    print(f"  {len(user_insert_rows)} users")
+    print(f"  {len(user_insert_rows)} users (all passwords: protectme)")
     print(f"  {len(account_insert_rows)} accounts")
     print(f"  {len(trade_insert_rows):,} trades")
 

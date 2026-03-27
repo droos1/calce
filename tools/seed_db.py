@@ -407,6 +407,21 @@ def main():
     cur.execute("SELECT external_id, id FROM users")
     user_to_id: dict[str, int] = {row[0]: row[1] for row in cur.fetchall()}
 
+    # Dev admin user (admin@njorda.se / protectme)
+    from dev_admin import ensure_admin_user
+
+    _, ph = ensure_admin_user(cur, conn)
+
+    # All generated users get password "password"
+    password_hash = ph.hash("password")
+    credential_rows = [(uid, password_hash) for uid in user_to_id.values()]
+
+    timed_insert(
+        "user_credentials",
+        "INSERT INTO user_credentials (user_id, password_hash) VALUES %s ON CONFLICT (user_id) DO NOTHING",
+        credential_rows,
+    )
+
     timed_insert(
         "accounts",
         "INSERT INTO accounts (user_id, currency, label) VALUES %s",

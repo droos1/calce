@@ -1,3 +1,5 @@
+mod api_keys;
+pub mod auth;
 mod calc;
 mod organizations;
 mod users;
@@ -18,4 +20,12 @@ pub fn user_routes() -> Router<AppState> {
 
 pub fn organization_routes() -> Router<AppState> {
     organizations::routes()
+}
+
+pub fn auth_routes() -> Router<AppState> {
+    auth::routes()
+}
+
+pub fn api_key_routes() -> Router<AppState> {
+    api_keys::routes()
 }

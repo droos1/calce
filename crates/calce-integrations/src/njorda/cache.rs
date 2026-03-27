@@ -96,18 +96,18 @@ fn to_rkyv(data: &CachedMarketData) -> RkyvMarketData {
     }
 }
 
-fn from_rkyv(r: &ArchivedRkyvMarketData) -> CachedMarketData {
+fn from_rkyv(r: &ArchivedRkyvMarketData) -> Result<CachedMarketData, NjordaError> {
     let date_from_ce = |days: &rkyv::rend::i32_le| {
         chrono::NaiveDate::from_num_days_from_ce_opt(days.to_native())
-            .expect("invalid date in cache")
+            .ok_or_else(|| NjordaError::CacheFormat("invalid date in cache".into()))
     };
 
-    CachedMarketData {
+    Ok(CachedMarketData {
         metadata: CacheMetadata {
             fetched_at: chrono::DateTime::from_timestamp_millis(r.fetched_at_millis.to_native())
-                .expect("invalid timestamp in cache"),
-            date_from: date_from_ce(&r.date_from_days),
-            date_to: date_from_ce(&r.date_to_days),
+                .ok_or_else(|| NjordaError::CacheFormat("invalid timestamp in cache".into()))?,
+            date_from: date_from_ce(&r.date_from_days)?,
+            date_to: date_from_ce(&r.date_to_days)?,
             price_count: r.price_count.to_native() as usize,
             fx_rate_count: r.fx_rate_count.to_native() as usize,
             instrument_count: r.instrument_count.to_native() as usize,
@@ -115,22 +115,26 @@ fn from_rkyv(r: &ArchivedRkyvMarketData) -> CachedMarketData {
         prices: r
             .prices
             .iter()
-            .map(|p| CachedPrice {
-                ticker: p.ticker.as_str().to_owned(),
-                date: date_from_ce(&p.date_days),
-                close: p.close.to_native(),
+            .map(|p| {
+                Ok(CachedPrice {
+                    ticker: p.ticker.as_str().to_owned(),
+                    date: date_from_ce(&p.date_days)?,
+                    close: p.close.to_native(),
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>, _>>()?,
         fx_rates: r
             .fx_rates
             .iter()
-            .map(|fx| CachedFxRate {
-                from: fx.from.as_str().to_owned(),
-                to: fx.to.as_str().to_owned(),
-                date: date_from_ce(&fx.date_days),
-                rate: fx.rate.to_native(),
+            .map(|fx| {
+                Ok(CachedFxRate {
+                    from: fx.from.as_str().to_owned(),
+                    to: fx.to.as_str().to_owned(),
+                    date: date_from_ce(&fx.date_days)?,
+                    rate: fx.rate.to_native(),
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>, _>>()?,
         instruments: r
             .instruments
             .iter()
@@ -142,7 +146,7 @@ fn from_rkyv(r: &ArchivedRkyvMarketData) -> CachedMarketData {
                 instrument_type: i.instrument_type.as_ref().map(|s| s.as_str().to_owned()),
             })
             .collect(),
-    }
+    })
 }
 
 // ── Public API ──────────────────────────────────────────────────────────
@@ -157,7 +161,7 @@ pub fn load_from_file(path: &Path) -> Result<CachedMarketData, NjordaError> {
         .map_err(|e| NjordaError::CacheFormat(e.to_string()))?;
     let archived = rkyv::access::<ArchivedRkyvMarketData, rkyv::rancor::Error>(&bytes)
         .map_err(|e| NjordaError::CacheFormat(e.to_string()))?;
-    Ok(from_rkyv(archived))
+    from_rkyv(archived)
 }
 
 /// # Errors

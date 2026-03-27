@@ -13,10 +13,7 @@ int_id!(TradeId);
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Trade {
-    #[cfg_attr(
-        feature = "serde",
-        serde(skip_serializing_if = "Option::is_none")
-    )]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub id: Option<TradeId>,
     pub user_id: UserId,
     pub account_id: AccountId,
