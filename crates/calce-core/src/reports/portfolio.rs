@@ -96,6 +96,7 @@ mod tests {
 
         let trade_date = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
         let trades = vec![Trade {
+            id: None,
             user_id: alice,
             account_id: acct,
             instrument_id: aapl.clone(),

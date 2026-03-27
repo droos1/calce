@@ -4,6 +4,12 @@ Deferred improvements and future work, roughly prioritized.
 
 ## High Priority
 
+### JWT instant revocation
+
+15-min TTL-based expiration is the current plan. If compliance or security
+requirements demand instant revocation, add a JWT blacklist with pub/sub
+cache invalidation. See `working_docs/auth-implementation-plan.md`.
+
 ## Medium Priority
 
 ### Trade ID for audit trails

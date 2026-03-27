@@ -154,6 +154,7 @@ mod tests {
 
         let mut store = UserDataStore::new();
         store.add_trade(Trade {
+            id: None,
             user_id: UserId::new("alice"),
             account_id: AccountId::new(1),
             instrument_id: aapl,

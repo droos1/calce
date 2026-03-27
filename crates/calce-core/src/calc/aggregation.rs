@@ -76,6 +76,7 @@ mod tests {
 
         let trades = vec![
             Trade {
+                id: None,
                 user_id: alice.clone(),
                 account_id: acct,
                 instrument_id: aapl.clone(),
@@ -85,6 +86,7 @@ mod tests {
                 date,
             },
             Trade {
+                id: None,
                 user_id: alice,
                 account_id: acct,
                 instrument_id: aapl,
@@ -110,6 +112,7 @@ mod tests {
 
         let trades = vec![
             Trade {
+                id: None,
                 user_id: alice.clone(),
                 account_id: acct,
                 instrument_id: aapl.clone(),
@@ -119,6 +122,7 @@ mod tests {
                 date,
             },
             Trade {
+                id: None,
                 user_id: alice,
                 account_id: acct,
                 instrument_id: aapl,
@@ -144,6 +148,7 @@ mod tests {
 
         let trades = vec![
             Trade {
+                id: None,
                 user_id: alice.clone(),
                 account_id: acct,
                 instrument_id: aapl.clone(),
@@ -153,6 +158,7 @@ mod tests {
                 date: early,
             },
             Trade {
+                id: None,
                 user_id: alice,
                 account_id: acct,
                 instrument_id: aapl,
@@ -180,6 +186,7 @@ mod tests {
 
         let trades = vec![
             Trade {
+                id: None,
                 user_id: alice.clone(),
                 account_id: acct_usd,
                 instrument_id: aapl.clone(),
@@ -189,6 +196,7 @@ mod tests {
                 date,
             },
             Trade {
+                id: None,
                 user_id: alice,
                 account_id: acct_eur,
                 instrument_id: aapl,

@@ -40,6 +40,7 @@ fn setup_multi_currency_scenario() -> (TestMarketData, Vec<Trade>, NaiveDate) {
     let trades = vec![
         // Alice buys 100 AAPL, sells 20 → net 80
         Trade {
+            id: None,
             user_id: alice.clone(),
             account_id: acct_usd,
             instrument_id: aapl.clone(),
@@ -49,6 +50,7 @@ fn setup_multi_currency_scenario() -> (TestMarketData, Vec<Trade>, NaiveDate) {
             date,
         },
         Trade {
+            id: None,
             user_id: alice.clone(),
             account_id: acct_usd,
             instrument_id: aapl,
@@ -59,6 +61,7 @@ fn setup_multi_currency_scenario() -> (TestMarketData, Vec<Trade>, NaiveDate) {
         },
         // Alice buys 50 VOW3
         Trade {
+            id: None,
             user_id: alice.clone(),
             account_id: acct_eur,
             instrument_id: vow3,
@@ -69,6 +72,7 @@ fn setup_multi_currency_scenario() -> (TestMarketData, Vec<Trade>, NaiveDate) {
         },
         // Alice buys 10 SPY
         Trade {
+            id: None,
             user_id: alice,
             account_id: acct_usd,
             instrument_id: spy,
@@ -139,6 +143,7 @@ fn retroactive_calculation() {
 
     let trades = vec![
         Trade {
+            id: None,
             user_id: alice.clone(),
             account_id: acct,
             instrument_id: aapl.clone(),
@@ -148,6 +153,7 @@ fn retroactive_calculation() {
             date: early,
         },
         Trade {
+            id: None,
             user_id: alice,
             account_id: acct,
             instrument_id: aapl,
@@ -232,6 +238,7 @@ fn aggregate_then_value() {
 
     let trades = vec![
         Trade {
+            id: None,
             user_id: alice.clone(),
             account_id: acct,
             instrument_id: aapl.clone(),
@@ -241,6 +248,7 @@ fn aggregate_then_value() {
             date,
         },
         Trade {
+            id: None,
             user_id: alice,
             account_id: acct,
             instrument_id: aapl.clone(),
@@ -298,6 +306,7 @@ fn portfolio_report_integration() {
     }
 
     let trades = vec![Trade {
+        id: None,
         user_id: alice,
         account_id: acct,
         instrument_id: aapl,

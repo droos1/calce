@@ -7,12 +7,15 @@ and similar infrastructure endpoints. Even instrument-scoped calculations
 (e.g. volatility) that aren't tied to a specific user still require the
 caller to be an authenticated user of the system.
 
-## Two Levels of Authorization
+## Three Levels of Authorization
 
 1. **Authenticated** — the caller is a valid user. Required for all
    calculation and data endpoints, including instrument-scoped ones.
 
-2. **User-scoped** — the caller is accessing a specific user's data
+2. **Admin-only** — the caller must be an admin. Used for user
+   management (create, list, delete) and organization endpoints.
+
+3. **User-scoped** — the caller is accessing a specific user's data
    (portfolios, trades, market value). Requires authentication *plus*
    an access check: can this user see that user's data?
 
@@ -24,14 +27,16 @@ Every authenticated request produces a `SecurityContext` (defined in `calce-data
 - **user_id** — the authenticated user
 - **role** — currently `User` or `Admin`
 
-The `SecurityContext` is passed to `DataService` which enforces access checks
-in the data layer before loading any user data. calce-core has no auth types —
-it is a pure calculation engine.
+Route handlers enforce access checks via helper functions in `calce-api/src/auth.rs` example:
+
+- `require_admin(ctx)` — returns 403 unless `ctx.role == Admin`
+
+All checks should be centralized to this module.
 
 ### Access Rules (User-Scoped)
 
 A user can access their own data. An advisor or admin can access other users'
-data. The check is `SecurityContext::can_access(target_user_id)`:
+data. The check is centralized to: `SecurityContext::can_access(target_user_id)`:
 
 - `Role::User` — can only access data where `target == self`
 - `Role::Admin` — can access any user's data
@@ -49,9 +54,9 @@ Header-based (placeholder for real auth):
 - `X-Role` — optional, defaults to `User`
 
 Extracted in `calce-api/src/auth.rs` as an Axum `FromRequestParts` extractor
-using types from `calce-data::auth`. Missing `X-User-Id` on a user-scoped route
-returns 401. Access checks are enforced by `DataService.load_calc_inputs()` using
-`calce-data::permissions::can_access_user_data()`.
+using types from `calce-data::auth`. Missing `X-User-Id` returns 401.
+Access checks are enforced at the route level via `require_admin()` and
+`require_access()`, which delegate to `calce-data::permissions::can_access_user_data()`.
 
 ## What's Coming
 

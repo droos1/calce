@@ -117,6 +117,7 @@ pub(crate) fn seed_user_data() -> UserDataStore {
     let eur = Currency::new("EUR");
 
     store.add_trade(Trade {
+        id: None,
         user_id: alice.clone(),
         account_id: acct_usd,
         instrument_id: InstrumentId::new("AAPL"),
@@ -127,6 +128,7 @@ pub(crate) fn seed_user_data() -> UserDataStore {
     });
 
     store.add_trade(Trade {
+        id: None,
         user_id: alice.clone(),
         account_id: acct_eur,
         instrument_id: InstrumentId::new("VOW3"),
@@ -137,6 +139,7 @@ pub(crate) fn seed_user_data() -> UserDataStore {
     });
 
     store.add_trade(Trade {
+        id: None,
         user_id: alice,
         account_id: acct_usd,
         instrument_id: InstrumentId::new("SPY"),

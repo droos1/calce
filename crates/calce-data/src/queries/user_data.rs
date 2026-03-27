@@ -7,7 +7,7 @@ use calce_core::domain::currency::Currency;
 use calce_core::domain::instrument::InstrumentId;
 use calce_core::domain::price::Price;
 use calce_core::domain::quantity::Quantity;
-use calce_core::domain::trade::Trade;
+use calce_core::domain::trade::{Trade, TradeId};
 use calce_core::domain::user::UserId;
 
 use crate::error::{DataError, DataResult};
@@ -41,7 +41,7 @@ impl UserDataRepo {
 
     pub async fn get_trades(&self, user_id: &UserId) -> DataResult<Vec<Trade>> {
         let rows = sqlx::query_as::<_, TradeRow>(
-            "SELECT u.external_id AS user_id, t.account_id, i.ticker AS instrument_id, \
+            "SELECT t.id, u.external_id AS user_id, t.account_id, i.ticker AS instrument_id, \
                     t.quantity, t.price, t.currency, t.trade_date \
              FROM trades t \
              JOIN users u ON t.user_id = u.id \
@@ -59,7 +59,7 @@ impl UserDataRepo {
 
     pub async fn get_all_trades(&self) -> DataResult<Vec<Trade>> {
         let rows = sqlx::query_as::<_, TradeRow>(
-            "SELECT u.external_id AS user_id, t.account_id, i.ticker AS instrument_id, \
+            "SELECT t.id, u.external_id AS user_id, t.account_id, i.ticker AS instrument_id, \
                     t.quantity, t.price, t.currency, t.trade_date \
              FROM trades t \
              JOIN users u ON t.user_id = u.id \
@@ -129,14 +129,15 @@ impl UserDataRepo {
         Ok(row)
     }
 
-    pub async fn insert_trade(&self, trade: &Trade) -> DataResult<()> {
-        sqlx::query(
+    pub async fn insert_trade(&self, trade: &Trade) -> DataResult<TradeId> {
+        let id = sqlx::query_scalar::<_, i64>(
             "INSERT INTO trades (user_id, account_id, instrument_id, quantity, price, currency, trade_date) \
              VALUES (\
                  (SELECT id FROM users WHERE external_id = $1), \
                  $2, \
                  (SELECT id FROM instruments WHERE ticker = $3), \
-                 $4, $5, $6, $7)",
+                 $4, $5, $6, $7) \
+             RETURNING id",
         )
         .bind(trade.user_id.as_str())
         .bind(trade.account_id.value())
@@ -145,9 +146,9 @@ impl UserDataRepo {
         .bind(trade.price.value())
         .bind(trade.currency.as_str())
         .bind(trade.date)
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await?;
-        Ok(())
+        Ok(TradeId::new(id))
     }
 
     // ── CRUD operations ──────────────────────────────────────────────────
@@ -257,6 +258,7 @@ pub struct UserRow {
 
 #[derive(sqlx::FromRow)]
 struct TradeRow {
+    id: i64,
     user_id: String,
     account_id: i64,
     instrument_id: String,
@@ -274,6 +276,7 @@ impl TradeRow {
             reason: "not a valid 3-letter uppercase currency code".into(),
         })?;
         Ok(Trade {
+            id: Some(TradeId::new(self.id)),
             user_id: UserId::new(self.user_id),
             account_id: AccountId::new(self.account_id),
             instrument_id: InstrumentId::new(self.instrument_id),

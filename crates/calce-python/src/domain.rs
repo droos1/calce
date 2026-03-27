@@ -97,6 +97,7 @@ impl Trade {
     ) -> Self {
         Trade {
             inner: calce_core::domain::trade::Trade {
+                id: None,
                 user_id: UserId::new(user_id),
                 account_id: AccountId::new(account_id),
                 instrument_id: InstrumentId::new(instrument_id),
@@ -106,6 +107,11 @@ impl Trade {
                 date,
             },
         }
+    }
+
+    #[getter]
+    fn id(&self) -> Option<i64> {
+        self.inner.id.map(|id| id.value())
     }
 
     #[getter]
@@ -146,8 +152,12 @@ impl Trade {
     }
 
     fn __repr__(&self) -> String {
+        let id_part = self
+            .inner
+            .id
+            .map_or(String::new(), |id| format!("id={}, ", id));
         format!(
-            "Trade(user_id=\"{}\", instrument_id=\"{}\", quantity={}, price={}, currency=\"{}\", date={})",
+            "Trade({id_part}user_id=\"{}\", instrument_id=\"{}\", quantity={}, price={}, currency=\"{}\", date={})",
             self.inner.user_id,
             self.inner.instrument_id,
             self.inner.quantity.value(),
