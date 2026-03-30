@@ -166,10 +166,7 @@ impl UserDataRepo {
     }
 
     /// Lightweight lookup: just account (id → label) for a user. No aggregation.
-    pub async fn get_account_names(
-        &self,
-        external_id: &str,
-    ) -> DataResult<Vec<(i64, String)>> {
+    pub async fn get_account_names(&self, external_id: &str) -> DataResult<Vec<(i64, String)>> {
         let rows = sqlx::query_as::<_, (i64, String)>(
             "SELECT a.id, a.label \
              FROM accounts a \

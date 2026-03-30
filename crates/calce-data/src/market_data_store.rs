@@ -7,7 +7,7 @@ use crate::in_memory_market_data::InMemoryMarketDataService;
 
 pub struct MarketDataStore {
     market_data: Arc<InMemoryMarketDataService>,
-    instruments: Vec<InstrumentSummary>,
+    instruments: HashMap<i64, InstrumentSummary>,
 }
 
 #[derive(Clone, Serialize)]
@@ -32,17 +32,21 @@ pub struct InstrumentSummary {
 
 impl MarketDataStore {
     pub fn from_memory(md: InMemoryMarketDataService) -> Self {
-        let instruments: Vec<InstrumentSummary> = md
+        let instruments: HashMap<i64, InstrumentSummary> = md
             .instrument_ids()
             .into_iter()
             .enumerate()
-            .map(|(i, id)| InstrumentSummary {
-                id: i64::try_from(i + 1).unwrap_or(0),
-                ticker: id.as_str().to_owned(),
-                currency: String::new(),
-                name: None,
-                instrument_type: "other".to_owned(),
-                allocations: HashMap::new(),
+            .map(|(i, id)| {
+                let db_id = i64::try_from(i + 1).unwrap_or(0);
+                let summary = InstrumentSummary {
+                    id: db_id,
+                    ticker: id.as_str().to_owned(),
+                    currency: String::new(),
+                    name: None,
+                    instrument_type: "other".to_owned(),
+                    allocations: HashMap::new(),
+                };
+                (db_id, summary)
             })
             .collect();
 
@@ -56,6 +60,7 @@ impl MarketDataStore {
         md: InMemoryMarketDataService,
         instruments: Vec<InstrumentSummary>,
     ) -> Self {
+        let instruments = instruments.into_iter().map(|i| (i.id, i)).collect();
         Self {
             market_data: Arc::new(md),
             instruments,
@@ -65,7 +70,7 @@ impl MarketDataStore {
     /// Consume the store and return the inner market data service and instrument list.
     pub fn into_parts(self) -> (InMemoryMarketDataService, Vec<InstrumentSummary>) {
         let md = Arc::try_unwrap(self.market_data).unwrap_or_else(|arc| (*arc).clone());
-        (md, self.instruments)
+        (md, self.instruments.into_values().collect())
     }
 
     pub fn market_data(&self) -> Arc<InMemoryMarketDataService> {
@@ -73,11 +78,11 @@ impl MarketDataStore {
     }
 
     pub fn list_instruments(&self) -> Vec<InstrumentSummary> {
-        self.instruments.clone()
+        self.instruments.values().cloned().collect()
     }
 
     pub fn get_instrument(&self, id: i64) -> Option<InstrumentSummary> {
-        self.instruments.iter().find(|i| i.id == id).cloned()
+        self.instruments.get(&id).cloned()
     }
 
     pub fn instrument_count(&self) -> i64 {
@@ -136,5 +141,21 @@ mod tests {
         let arc = store.market_data();
         let price = arc.get_price(&aapl, date(2025, 1, 10)).unwrap();
         assert_eq!(price.value(), 150.0);
+    }
+
+    #[test]
+    fn get_instrument_is_direct_lookup() {
+        let md = InMemoryMarketDataService::new();
+        let instruments = vec![InstrumentSummary {
+            id: 42,
+            ticker: "AAPL".to_owned(),
+            currency: "USD".to_owned(),
+            name: Some("Apple Inc.".to_owned()),
+            instrument_type: "stock".to_owned(),
+            allocations: HashMap::new(),
+        }];
+        let store = MarketDataStore::from_parts(md, instruments);
+        assert_eq!(store.get_instrument(42).unwrap().ticker, "AAPL");
+        assert!(store.get_instrument(999).is_none());
     }
 }

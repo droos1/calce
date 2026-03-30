@@ -35,6 +35,22 @@ cache invalidation. See `working_docs/auth-implementation-plan.md`.
 Add periodic cleanup: `DELETE FROM refresh_tokens WHERE expires_at < NOW() - INTERVAL '7 days'`.
 Could be pg_cron, an in-process background task, or a scheduled Cloud Run job.
 
+### UserDataStore access control for unauthenticated methods
+
+`trades_for()` is public with no `SecurityContext` — any crate can bypass the
+access checks that `load_trades` enforces. Should be `pub(crate)` or removed
+from the public API.
+
+`user_count()`, `trade_count()`, `organization_count()` return platform-wide
+totals without any access control. A regular user hitting `/v1/data/stats`
+learns global counts. These should either require admin or return scoped counts
+based on the caller's `SecurityContext`.
+
+Both are part of a broader question about how the in-memory cache layer and
+user data access control fit together — the cache serves pre-loaded data, but
+the auth boundary sits at the store methods, making it easy for new methods to
+skip checks.
+
 ## Medium Priority
 
 ### Trade ID for audit trails

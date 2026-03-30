@@ -5,24 +5,27 @@ use serde::Serialize;
 use crate::auth::SecurityContext;
 use crate::error::{DataError, DataResult};
 use crate::permissions;
+use calce_core::domain::account::AccountId;
+use calce_core::domain::currency::Currency;
+use calce_core::domain::instrument::InstrumentId;
 use calce_core::domain::trade::Trade;
 use calce_core::domain::user::UserId;
 
 #[derive(Clone, Serialize)]
 pub struct PositionSummary {
-    pub instrument_id: String,
+    pub instrument_id: InstrumentId,
     pub quantity: f64,
-    pub currency: String,
+    pub currency: Currency,
     pub trade_count: i64,
 }
 
 #[derive(Default)]
 pub struct UserDataStore {
     trades: HashMap<UserId, Vec<Trade>>,
-    users: Vec<UserSummary>,
+    users: HashMap<UserId, UserSummary>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct UserSummary {
     pub id: String,
     pub email: Option<String>,
@@ -54,9 +57,9 @@ fn dedup_subjects(subjects: &[UserId]) -> Vec<UserId> {
 
 /// Aggregate trades into position summaries, grouped by (instrument, currency).
 fn aggregate_positions<'a>(trades: impl Iterator<Item = &'a Trade>) -> Vec<PositionSummary> {
-    let mut positions: HashMap<(&str, &str), (f64, i64)> = HashMap::new();
+    let mut positions: HashMap<(&str, Currency), (f64, i64)> = HashMap::new();
     for trade in trades {
-        let key = (trade.instrument_id.as_str(), trade.currency.as_str());
+        let key = (trade.instrument_id.as_str(), trade.currency);
         let entry = positions.entry(key).or_insert((0.0, 0));
         entry.0 += trade.quantity.value();
         entry.1 += 1;
@@ -66,14 +69,14 @@ fn aggregate_positions<'a>(trades: impl Iterator<Item = &'a Trade>) -> Vec<Posit
         .into_iter()
         .map(
             |((instrument_id, currency), (quantity, trade_count))| PositionSummary {
-                instrument_id: instrument_id.to_owned(),
+                instrument_id: InstrumentId::new(instrument_id),
                 quantity,
-                currency: currency.to_owned(),
+                currency,
                 trade_count,
             },
         )
         .collect();
-    result.sort_by(|a, b| a.instrument_id.cmp(&b.instrument_id));
+    result.sort_by(|a, b| a.instrument_id.as_str().cmp(b.instrument_id.as_str()));
     result
 }
 
@@ -91,24 +94,7 @@ impl UserDataStore {
     }
 
     pub fn set_users(&mut self, users: Vec<UserSummary>) {
-        self.users = users;
-    }
-
-    /// Derive the user list from trade keys (when no explicit user info is available).
-    pub fn infer_users(&mut self) {
-        self.users = self
-            .trades
-            .iter()
-            .map(|(id, trades)| UserSummary {
-                id: id.as_str().to_owned(),
-                email: None,
-                name: None,
-                organization_id: None,
-                organization_name: None,
-                trade_count: i64::try_from(trades.len()).unwrap_or(0),
-                account_count: 0,
-            })
-            .collect();
+        self.users = users.into_iter().map(|u| (UserId::new(&u.id), u)).collect();
     }
 
     #[must_use]
@@ -149,17 +135,23 @@ impl UserDataStore {
     pub fn list_users(&self, ctx: &SecurityContext) -> Vec<UserSummary> {
         self.users
             .iter()
-            .filter(|u| permissions::can_access_user_data(ctx, &UserId::new(&u.id)))
-            .cloned()
+            .filter(|(id, _)| permissions::can_access_user_data(ctx, id))
+            .map(|(_, u)| u.clone())
             .collect()
     }
 
     /// Look up a single user by ID, enforcing access control.
-    pub fn get_user(&self, ctx: &SecurityContext, user_id: &str) -> Option<UserSummary> {
-        if !permissions::can_access_user_data(ctx, &UserId::new(user_id)) {
-            return None;
-        }
-        self.users.iter().find(|u| u.id == user_id).cloned()
+    ///
+    /// # Errors
+    ///
+    /// Returns `Unauthorized` if the security context lacks access.
+    pub fn get_user(
+        &self,
+        ctx: &SecurityContext,
+        user_id: &UserId,
+    ) -> DataResult<Option<UserSummary>> {
+        check_user_access(ctx, user_id)?;
+        Ok(self.users.get(user_id).cloned())
     }
 
     pub fn user_count(&self) -> i64 {
@@ -184,19 +176,19 @@ impl UserDataStore {
         &self,
         ctx: &SecurityContext,
         user_id: &UserId,
-        account_id: i64,
+        account_id: AccountId,
     ) -> DataResult<Vec<PositionSummary>> {
         check_user_access(ctx, user_id)?;
         let trades = self.trades_for(user_id).unwrap_or_default();
         Ok(aggregate_positions(
-            trades.iter().filter(|t| t.account_id.value() == account_id),
+            trades.iter().filter(|t| t.account_id == account_id),
         ))
     }
 
     pub fn organization_count(&self) -> i64 {
         let count = self
             .users
-            .iter()
+            .values()
             .filter_map(|u| u.organization_id.as_deref())
             .collect::<HashSet<_>>()
             .len();
@@ -233,7 +225,15 @@ mod tests {
             currency: usd,
             date: date(2025, 1, 10),
         });
-        store.infer_users();
+        store.set_users(vec![UserSummary {
+            id: "alice".to_owned(),
+            email: None,
+            name: None,
+            organization_id: None,
+            organization_name: None,
+            trade_count: 1,
+            account_count: 1,
+        }]);
         store
     }
 
@@ -309,22 +309,20 @@ mod tests {
     }
 
     #[test]
-    fn infer_users_sets_trade_count() {
-        let store = test_store();
-        let users = store.list_users(&admin_ctx());
-        assert_eq!(users[0].trade_count, 1);
-    }
-
-    #[test]
     fn get_user_denies_unauthorized() {
         let store = test_store();
-        assert!(store.get_user(&user_ctx("bob"), "alice").is_none());
+        let err = store
+            .get_user(&user_ctx("bob"), &UserId::new("alice"))
+            .unwrap_err();
+        assert!(matches!(err, DataError::Unauthorized { .. }));
     }
 
     #[test]
     fn get_user_allows_self() {
         let store = test_store();
-        let user = store.get_user(&user_ctx("alice"), "alice");
+        let user = store
+            .get_user(&user_ctx("alice"), &UserId::new("alice"))
+            .unwrap();
         assert_eq!(user.unwrap().id, "alice");
     }
 
@@ -335,9 +333,9 @@ mod tests {
             .positions_for_user(&admin_ctx(), &UserId::new("alice"))
             .unwrap();
         assert_eq!(positions.len(), 1);
-        assert_eq!(positions[0].instrument_id, "AAPL");
+        assert_eq!(positions[0].instrument_id.as_str(), "AAPL");
         assert!((positions[0].quantity - 100.0).abs() < f64::EPSILON);
-        assert_eq!(positions[0].currency, "USD");
+        assert_eq!(positions[0].currency.as_str(), "USD");
         assert_eq!(positions[0].trade_count, 1);
     }
 }

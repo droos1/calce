@@ -8,6 +8,7 @@ use calce_core::calc::aggregation;
 use calce_core::calc::market_value::{self, MarketValueResult};
 use calce_core::calc::volatility::{self, VolatilityResult};
 use calce_core::context::CalculationContext;
+use calce_core::domain::account::AccountId;
 use calce_core::domain::currency::Currency;
 use calce_core::domain::instrument::InstrumentId;
 use calce_core::domain::trade::Trade;
@@ -269,9 +270,10 @@ async fn data_user(
     State(state): State<AppState>,
     Path(user_id): Path<String>,
 ) -> Result<Json<UserSummary>, ApiError> {
+    let user_id = UserId::new(user_id);
     state
         .user_data
-        .get_user(&ctx, &user_id)
+        .get_user(&ctx, &user_id)?
         .map(Json)
         .ok_or_else(|| ApiError::Data(calce_data::error::DataError::NotFound("user".into())))
 }
@@ -320,10 +322,10 @@ async fn user_positions(
                 .flatten()
                 .map(str::to_owned);
             PositionResponse {
-                instrument_id: p.instrument_id,
+                instrument_id: p.instrument_id.to_string(),
                 instrument_name,
                 quantity: p.quantity,
-                currency: p.currency,
+                currency: p.currency.to_string(),
                 trade_count: p.trade_count,
             }
         })
@@ -425,9 +427,10 @@ async fn account_positions(
     Path(path): Path<AccountTradesPath>,
 ) -> Result<Json<Vec<PositionResponse>>, ApiError> {
     let user_id = UserId::new(&path.user_id);
-    let positions = state
-        .user_data
-        .positions_for_account(&ctx, &user_id, path.account_id)?;
+    let positions =
+        state
+            .user_data
+            .positions_for_account(&ctx, &user_id, AccountId::new(path.account_id))?;
 
     let instruments = state.market_data.list_instruments();
     let name_lookup: HashMap<&str, Option<&str>> = instruments
@@ -444,10 +447,10 @@ async fn account_positions(
                 .flatten()
                 .map(str::to_owned);
             PositionResponse {
-                instrument_id: p.instrument_id,
+                instrument_id: p.instrument_id.to_string(),
                 instrument_name,
                 quantity: p.quantity,
-                currency: p.currency,
+                currency: p.currency.to_string(),
                 trade_count: p.trade_count,
             }
         })

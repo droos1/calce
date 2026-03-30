@@ -7,7 +7,7 @@ use calce_core::domain::quantity::Quantity;
 use calce_core::domain::trade::Trade;
 use calce_core::domain::user::UserId;
 use calce_data::InMemoryMarketDataService;
-use calce_data::user_data_store::UserDataStore;
+use calce_data::user_data_store::{UserDataStore, UserSummary};
 use chrono::{Datelike, NaiveDate};
 
 fn date(y: i32, m: u32, d: u32) -> NaiveDate {
@@ -149,7 +149,15 @@ pub(crate) fn seed_user_data() -> UserDataStore {
         date: date(2024, 3, 1),
     });
 
-    store.infer_users();
+    store.set_users(vec![UserSummary {
+        id: "alice".to_owned(),
+        email: None,
+        name: Some("Alice".to_owned()),
+        organization_id: None,
+        organization_name: None,
+        trade_count: 3,
+        account_count: 2,
+    }]);
     store
 }
 
