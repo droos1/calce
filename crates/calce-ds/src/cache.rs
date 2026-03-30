@@ -186,7 +186,7 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> TimeSeriesCache<K> {
         self.data.get(key).map(|e| {
             let hist = e.history.load_full();
             let start = from.min(hist.len());
-            let end = to.min(hist.len());
+            let end = to.min(hist.len()).max(start);
             hist[start..end].to_vec()
         })
     }
@@ -334,6 +334,8 @@ mod tests {
         );
         // Clamped range
         assert_eq!(cache.get_history_range(&1, 3, 100), Some(vec![40.0, 50.0]));
+        // Reversed range returns empty instead of panicking
+        assert_eq!(cache.get_history_range(&1, 4, 1), Some(vec![]));
     }
 
     #[test]

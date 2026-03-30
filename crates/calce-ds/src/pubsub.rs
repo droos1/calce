@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use dashmap::DashMap;
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
@@ -75,15 +75,14 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> SubscriptionRegistry<K> {
 
     fn subscribe(&self, keys: &[K], buffer_size: usize) -> Subscription<K> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let (tx, rx) = mpsc::channel(buffer_size);
+        let (tx, rx) = mpsc::channel(buffer_size.max(1));
 
-        let mut deduped = keys.to_vec();
-        // Sort by hash to group equal elements adjacently so `dedup()` removes
-        // duplicates. Works because equal keys always hash equally, guaranteeing
-        // adjacency. Non-equal keys with hash collisions also end up adjacent
-        // but `dedup()` correctly keeps both (they differ by Eq).
-        deduped.sort_by_key(|a| fxhash_of(a));
-        deduped.dedup();
+        let mut seen = FxHashSet::default();
+        let deduped: Vec<K> = keys
+            .iter()
+            .filter(|k| seen.insert((*k).clone()))
+            .cloned()
+            .collect();
 
         self.per_subscriber.insert(id, deduped.clone());
         for key in &deduped {
@@ -120,7 +119,13 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> SubscriptionRegistry<K> {
             for (sid, tx) in subs.iter() {
                 match tx.try_send(event.clone()) {
                     Ok(()) => sent += 1,
-                    Err(mpsc::error::TrySendError::Full(_)) => dropped += 1,
+                    Err(mpsc::error::TrySendError::Full(_)) => {
+                        tracing::warn!(
+                            subscriber = sid,
+                            "subscriber buffer full, dropping notification"
+                        );
+                        dropped += 1;
+                    }
                     Err(mpsc::error::TrySendError::Closed(_)) => {
                         dropped += 1;
                         dead.push(*sid);
@@ -135,13 +140,6 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> SubscriptionRegistry<K> {
 
         (sent, dropped)
     }
-}
-
-fn fxhash_of<K: Hash>(key: &K) -> u64 {
-    use std::hash::Hasher;
-    let mut h = rustc_hash::FxHasher::default();
-    key.hash(&mut h);
-    h.finish()
 }
 
 // ---------------------------------------------------------------------------
@@ -207,7 +205,7 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> PubSub<K> {
     /// then [`start`](Self::start) to launch the dispatcher task.
     #[must_use]
     pub fn new(coalesce_window: Duration, channel_capacity: usize) -> Self {
-        let (tx, rx) = mpsc::channel(channel_capacity);
+        let (tx, rx) = mpsc::channel(channel_capacity.max(1));
         Self {
             event_tx: tx,
             event_rx: std::sync::Mutex::new(Some(rx)),
@@ -470,5 +468,31 @@ mod tests {
         let stats = pubsub.shutdown().await;
         // The notification was dropped because the subscriber is dead.
         assert!(stats.notifications_dropped >= 1 || stats.events_received >= 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn subscribe_deduplicates_keys() {
+        let pubsub = PubSub::<u32>::new(Duration::from_millis(10), 1024);
+        let tx = pubsub.event_sender();
+        let mut sub = pubsub.subscribe(&[1, 2, 1, 1, 2], 64);
+        pubsub.start();
+
+        tx.send(UpdateEvent::CurrentChanged { key: 1 }).await.ok();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Should receive exactly one notification, not three.
+        assert!(sub.receiver.try_recv().is_ok());
+        assert!(sub.receiver.try_recv().is_err());
+
+        drop(tx);
+        pubsub.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn zero_capacity_does_not_panic() {
+        let pubsub = PubSub::<u32>::new(Duration::from_millis(10), 0);
+        let _sub = pubsub.subscribe(&[1], 0);
+        pubsub.start();
+        pubsub.shutdown().await;
     }
 }

@@ -292,6 +292,17 @@ def build_python(c):
 
 
 @task
+def fix(c):
+    """Auto-fix formatting and lint errors (Rust + Python)."""
+    print("── Rust ──")
+    c.run("cargo fmt")
+    c.run("cargo clippy --workspace --fix --allow-dirty --allow-staged -- -D warnings")
+    print("── Python ──")
+    c.run(f"uv run ruff check --fix {PYTHON_DIRS}")
+    c.run(f"uv run ruff format {PYTHON_DIRS}")
+
+
+@task
 def check(c):
     """Lint and format-check all code (Rust + Python). No tests."""
     print("── Rust ──")
