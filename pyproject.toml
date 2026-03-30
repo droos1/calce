@@ -13,6 +13,9 @@ dev = [
     "python-dotenv>=1.0",
     "psycopg2-binary>=2.9",
     "argon2-cffi>=23.1",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "sse-starlette>=2.0",
 ]
 
 [tool.ruff]

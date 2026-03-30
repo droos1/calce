@@ -13,6 +13,8 @@ calce-data = { path = "../calce-data" }
 pyo3 = { version = "0.24", features = ["extension-module", "chrono"] }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
+uuid = { version = "1", features = ["v4"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"] }
 
 [lints]
 workspace = true

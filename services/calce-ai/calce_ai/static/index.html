@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calce AI</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Login screen -->
+  <div id="login-screen" class="screen">
+    <div class="login-card">
+      <h1>Calce AI</h1>
+      <p class="subtitle">Portfolio Analysis Assistant</p>
+      <form id="login-form">
+        <input type="email" id="email" placeholder="Email" autocomplete="email" required>
+        <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+        <button type="submit" id="login-btn">Log in</button>
+        <p id="login-error" class="error" hidden></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- Chat screen -->
+  <div id="chat-screen" class="screen" hidden>
+    <header>
+      <div class="header-left">
+        <h1>Calce AI</h1>
+        <span id="user-info"></span>
+      </div>
+      <button id="logout-btn">Log out</button>
+    </header>
+    <div id="messages"></div>
+    <form id="chat-form">
+      <input type="text" id="chat-input" placeholder="Ask about your portfolio..." autocomplete="off">
+      <button type="submit" id="send-btn">Send</button>
+    </form>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

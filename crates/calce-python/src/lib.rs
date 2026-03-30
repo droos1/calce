@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 
+mod auth;
 mod data_service;
 mod data_types;
 mod domain;
@@ -41,6 +42,9 @@ fn calce(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<results::AllocationResult>()?;
     m.add_class::<results::PortfolioReport>()?;
     m.add_class::<results::VolatilityResult>()?;
+
+    // Auth
+    auth::register(m)?;
 
     // Exceptions
     errors::register(m)?;
