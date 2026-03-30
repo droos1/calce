@@ -634,7 +634,3 @@ async fn instrument_prices(
         .collect();
     Ok(Json(points))
 }
-
-pub async fn explorer() -> axum::response::Html<&'static str> {
-    axum::response::Html(include_str!("../../../../tools/api-explorer.html"))
-}

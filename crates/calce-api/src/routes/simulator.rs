@@ -114,10 +114,10 @@ async fn events_sse(
     let price_stream =
         tokio_stream::wrappers::ReceiverStream::new(price_sub.receiver).map(|event| {
             let (key, kind) = match &event {
-                calce_ds::pubsub::UpdateEvent::CurrentChanged { key } => {
+                calce_datastructs::pubsub::UpdateEvent::CurrentChanged { key } => {
                     (key.as_str().to_owned(), "current")
                 }
-                calce_ds::pubsub::UpdateEvent::HistoryChanged { key } => {
+                calce_datastructs::pubsub::UpdateEvent::HistoryChanged { key } => {
                     (key.as_str().to_owned(), "history")
                 }
             };
@@ -132,10 +132,10 @@ async fn events_sse(
 
     let fx_stream = tokio_stream::wrappers::ReceiverStream::new(fx_sub.receiver).map(|event| {
         let (key, kind) = match &event {
-            calce_ds::pubsub::UpdateEvent::CurrentChanged { key } => {
+            calce_datastructs::pubsub::UpdateEvent::CurrentChanged { key } => {
                 (format!("{}/{}", key.0.as_str(), key.1.as_str()), "current")
             }
-            calce_ds::pubsub::UpdateEvent::HistoryChanged { key } => {
+            calce_datastructs::pubsub::UpdateEvent::HistoryChanged { key } => {
                 (format!("{}/{}", key.0.as_str(), key.1.as_str()), "history")
             }
         };

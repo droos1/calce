@@ -8,15 +8,17 @@ Financial calculation engine for portfolio tracking.
 Cargo.toml                  — workspace root
 crates/
 ├── calce-core/             — core Rust library (no DB/async deps)
+├── calce-datastructs/      — concurrent data structures (caches, pubsub)
 ├── calce-data/             — Postgres-backed storage + DataService
 ├── calce-integrations/     — external data source integrations (njorda, etc.)
 ├── calce-api/              — HTTP server, wires data + core
 └── calce-python/           — PyO3 bindings (depends on core + data)
 services/
 ├── calce-ai/               — AI chat interface (Anthropic Claude + calce bindings)
+├── calce-console/          — admin console frontend (Vite/TypeScript)
 └── calce-db/               — database schema management (Alembic/SQLAlchemy)
 docs/                       — reference, design and architecture documentation
-tools/                      — developer and testing tools, e.g. benchmarking
+tools/                      — developer and testing tools (scripts, benchmarks)
 working_docs/               — ephemeral working notes, design exploration, task tracking
 ```
 
@@ -66,7 +68,7 @@ Don't restate the function/field/type name as a sentence — if the doc comment 
 | `invoke check` | Lint & format-check all code (clippy + ruff) — no tests |
 | `invoke test` | Run all tests (Rust + Python) |
 | `invoke pre-commit` | Full pre-push gate: `check` + `test` |
-| `invoke dev` | Start DB + API (hot-reload) + open explorer |
+| `invoke dev` | Start DB + API (hot-reload) + console |
 | `invoke ai` | Interactive AI analyst chat (requires DB + `ANTHROPIC_API_KEY`) |
 
 ### Local dev credentials

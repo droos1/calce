@@ -6,7 +6,7 @@ use calce_data::auth::AuthConfig;
 use calce_data::auth::api_key::ApiKeyCache;
 use calce_data::market_data_store::MarketDataStore;
 use calce_data::user_data_store::UserDataStore;
-use calce_ds::pubsub::PubSub;
+use calce_datastructs::pubsub::PubSub;
 use sqlx::PgPool;
 
 use crate::rate_limit::KeyedRateLimiter;

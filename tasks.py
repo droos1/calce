@@ -72,12 +72,6 @@ def ai(c):
 
 
 @task
-def explorer(c):
-    """Open the dev console in the browser (API server must be running)."""
-    c.run(f"open http://localhost:{API_PORT}")
-
-
-@task
 def console(c):
     """Start the admin console frontend (Vite dev server)."""
     c.run(f"cd {CALCE_CONSOLE} && npm run dev", pty=True)
@@ -91,7 +85,7 @@ def console_build(c):
 
 @task
 def dev(c):
-    """Start full dev environment: DB, API (hot-reload), console, and open browser."""
+    """Start full dev environment: DB, API (hot-reload), and console."""
     # 1. Ensure DB is running + migrated
     print("Starting database...")
     c.run("docker compose up -d postgres", hide="both")

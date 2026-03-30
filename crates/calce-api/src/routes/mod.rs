@@ -9,8 +9,6 @@ use axum::Router;
 
 use crate::state::AppState;
 
-pub use calc::explorer;
-
 pub fn calc_routes() -> Router<AppState> {
     calc::routes()
 }

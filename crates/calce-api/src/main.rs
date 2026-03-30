@@ -2,13 +2,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
-use axum::routing::get;
 use calce_data::auth::AuthConfig;
 use calce_data::auth::api_key::ApiKeyCache;
 use calce_data::loader;
 use calce_data::market_data_store::MarketDataStore;
 use calce_data::user_data_store::UserDataStore;
-use calce_ds::pubsub::PubSub;
+use calce_datastructs::pubsub::PubSub;
 use sqlx::PgPool;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
@@ -28,7 +27,6 @@ use state::AppState;
 
 fn build_router(state: AppState) -> Router {
     Router::new()
-        .route("/", get(routes::explorer))
         .merge(routes::calc_routes())
         .merge(routes::user_routes())
         .merge(routes::organization_routes())
@@ -213,7 +211,6 @@ async fn main() {
         .await
         .expect("failed to bind");
 
-    tracing::info!("Dev console: http://localhost:{port}");
     tracing::info!("Listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, app).await.expect("server error");
 }

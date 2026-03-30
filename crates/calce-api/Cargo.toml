@@ -10,7 +10,7 @@ path = "src/main.rs"
 [dependencies]
 calce-core = { path = "../calce-core", features = ["serde"] }
 calce-data = { path = "../calce-data" }
-calce-ds = { path = "../calce-ds" }
+calce-datastructs = { path = "../calce-datastructs" }
 axum = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tokio-stream = "0.1"
