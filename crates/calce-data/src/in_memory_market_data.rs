@@ -28,14 +28,14 @@ struct PendingData {
 /// Must be frozen (via `freeze()` or a bulk constructor) before querying.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct InMemoryMarketDataService {
-    base_day: i32,
-    num_days: usize,
-    prices: HashMap<InstrumentId, Vec<f64>>,
-    fx_rates: HashMap<(Currency, Currency), Vec<f64>>,
+    pub(crate) base_day: i32,
+    pub(crate) num_days: usize,
+    pub(crate) prices: HashMap<InstrumentId, Vec<f64>>,
+    pub(crate) fx_rates: HashMap<(Currency, Currency), Vec<f64>>,
     #[serde(default)]
-    instrument_types: HashMap<InstrumentId, InstrumentType>,
+    pub(crate) instrument_types: HashMap<InstrumentId, InstrumentType>,
     #[serde(default)]
-    allocations: HashMap<InstrumentId, HashMap<String, Vec<(String, f64)>>>,
+    pub(crate) allocations: HashMap<InstrumentId, HashMap<String, Vec<(String, f64)>>>,
     total_prices: usize,
     total_fx_rates: usize,
     #[serde(skip)]

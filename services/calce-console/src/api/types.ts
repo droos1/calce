@@ -107,3 +107,12 @@ export interface ApiErrorResponse {
   error: string;
   message: string;
 }
+
+export interface SimulatorStats {
+  running: boolean;
+  ticks: number;
+  fx_updates: number;
+  price_updates: number;
+  history_updates: number;
+  errors: number;
+}

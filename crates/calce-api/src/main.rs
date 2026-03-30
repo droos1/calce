@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use axum::routing::get;
@@ -7,6 +8,7 @@ use calce_data::auth::api_key::ApiKeyCache;
 use calce_data::loader;
 use calce_data::market_data_store::MarketDataStore;
 use calce_data::user_data_store::UserDataStore;
+use calce_ds::pubsub::PubSub;
 use sqlx::PgPool;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
@@ -16,6 +18,7 @@ mod auth;
 mod error;
 mod rate_limit;
 mod routes;
+pub mod simulator;
 mod state;
 
 #[cfg(test)]
@@ -31,6 +34,7 @@ fn build_router(state: AppState) -> Router {
         .merge(routes::organization_routes())
         .merge(routes::auth_routes())
         .merge(routes::api_key_routes())
+        .merge(routes::simulator_routes())
         .layer(CorsLayer::very_permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -175,13 +179,30 @@ async fn main() {
 
     let auth_config = AuthConfig::from_env();
 
+    let market_data = Arc::new(market_data);
+    let md = market_data.market_data();
+
+    // Wire PubSub to market data caches.
+    let price_pubsub = PubSub::new(Duration::from_millis(50), 8192);
+    let fx_pubsub = PubSub::new(Duration::from_millis(50), 4096);
+    md.enable_price_notifications(price_pubsub.event_sender());
+    md.enable_fx_notifications(fx_pubsub.event_sender());
+    price_pubsub.start();
+    fx_pubsub.start();
+    tracing::info!("PubSub dispatchers started");
+
+    let sim = Arc::new(simulator::Simulator::new(Arc::clone(&md)));
+
     let state = AppState {
-        market_data: Arc::new(market_data),
+        market_data,
         user_data: Arc::new(user_data),
         pool,
         auth_config,
         api_key_cache: ApiKeyCache::new(),
         auth_rate_limiter: rate_limit::create_auth_rate_limiter(),
+        simulator: Some(sim),
+        price_pubsub: Some(Arc::new(price_pubsub)),
+        fx_pubsub: Some(Arc::new(fx_pubsub)),
     };
 
     let app = build_router(state);
@@ -211,15 +232,18 @@ mod tests {
     static TEST_AUTH_CONFIG: LazyLock<AuthConfig> = LazyLock::new(AuthConfig::test_default);
 
     fn test_state() -> AppState {
-        let market_data = MarketDataStore::from_memory(seed::seed_market_data());
+        let market_data = Arc::new(MarketDataStore::from_memory(seed::seed_market_data()));
         let user_data = seed::seed_user_data();
         AppState {
-            market_data: Arc::new(market_data),
+            market_data,
             user_data: Arc::new(user_data),
             pool: None,
             auth_config: TEST_AUTH_CONFIG.clone(),
             api_key_cache: ApiKeyCache::new(),
             auth_rate_limiter: rate_limit::create_auth_rate_limiter(),
+            simulator: None,
+            price_pubsub: None,
+            fx_pubsub: None,
         }
     }
 

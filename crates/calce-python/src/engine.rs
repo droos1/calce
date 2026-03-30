@@ -31,7 +31,7 @@ impl CalcEngine {
         market_data: Py<MarketData>,
         user_data: Py<UserData>,
     ) -> PyResult<Self> {
-        market_data.borrow_mut(py).inner.freeze();
+        market_data.borrow_mut(py).ensure_ready();
         Ok(CalcEngine {
             ctx: CalculationContext::new(base_currency.inner, as_of_date),
             user_id: UserId::new(user_id),
@@ -71,7 +71,7 @@ impl CalcEngine {
         })?;
         let positions = aggregation::aggregate_positions(trades, self.ctx.as_of_date)
             .map_err(calce_err_to_py)?;
-        market_value::value_positions(&positions, &self.ctx, &md.inner)
+        market_value::value_positions(&positions, &self.ctx, md.as_service())
             .map(|outcome| MarketValueResult {
                 warnings: outcome.warnings,
                 inner: outcome.value,
@@ -85,7 +85,7 @@ impl CalcEngine {
         let trades = ud.inner.trades_for(&self.user_id).ok_or_else(|| {
             NoTradesFoundError::new_err(format!("No trades found for user {}", self.user_id))
         })?;
-        portfolio::portfolio_report(trades, &self.ctx, &md.inner)
+        portfolio::portfolio_report(trades, &self.ctx, md.as_service())
             .map(|outcome| PortfolioReport {
                 warnings: outcome.warnings,
                 inner: outcome.value,
@@ -107,8 +107,13 @@ impl CalcEngine {
     ) -> PyResult<VolatilityResult> {
         let md = self.market_data.borrow(py);
         let instrument = InstrumentId::new(instrument_id);
-        volatility::calculate_volatility(&instrument, self.ctx.as_of_date, lookback_days, &md.inner)
-            .map(|r| VolatilityResult { inner: r })
-            .map_err(calce_err_to_py)
+        volatility::calculate_volatility(
+            &instrument,
+            self.ctx.as_of_date,
+            lookback_days,
+            md.as_service(),
+        )
+        .map(|r| VolatilityResult { inner: r })
+        .map_err(calce_err_to_py)
     }
 }

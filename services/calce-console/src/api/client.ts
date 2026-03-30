@@ -10,6 +10,7 @@ import type {
   PaginatedResponse,
   PositionSummary,
   Price,
+  SimulatorStats,
   TradeSummary,
   User,
 } from "./types";
@@ -228,6 +229,22 @@ export const api = {
   revokeApiKey(orgId: string, keyId: number): Promise<void> {
     return fetchApi<void>(`/v1/organizations/${orgId}/api-keys/${keyId}`, {
       method: "DELETE",
+    });
+  },
+
+  getSimulatorStatus(): Promise<SimulatorStats> {
+    return fetchApi<SimulatorStats>("/v1/admin/simulator/status");
+  },
+
+  startSimulator(): Promise<SimulatorStats> {
+    return fetchApi<SimulatorStats>("/v1/admin/simulator/start", {
+      method: "POST",
+    });
+  },
+
+  stopSimulator(): Promise<SimulatorStats> {
+    return fetchApi<SimulatorStats>("/v1/admin/simulator/stop", {
+      method: "POST",
     });
   },
 };

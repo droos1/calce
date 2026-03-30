@@ -352,10 +352,66 @@ def coverage(c, html=False):
 
 
 @task
+def rel(c):
+    """Start DB + release-mode API for benchmarking. Ctrl-C to stop."""
+    # 1. Ensure DB is running + migrated
+    print("Starting database...")
+    c.run("docker compose up -d postgres", hide="both")
+    c.run(f"cd {CALCE_DB} && uv run alembic upgrade head", hide="both")
+
+    # 2. Build and start API in release mode
+    print("Building API in release mode (this may take a while)...")
+    c.run("cargo build --release -p calce-api", pty=True)
+
+    print(f"Starting API on port {API_PORT} (release mode)...")
+    env = {**os.environ, "RUST_LOG": "info"}
+    api_proc = subprocess.Popen(
+        ["./target/release/calce-api"],
+        env=env,
+    )
+
+    def _cleanup():
+        api_proc.terminate()
+        try:
+            api_proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            api_proc.kill()
+        subprocess.run(
+            f"lsof -ti:{API_PORT} | xargs kill -9 2>/dev/null",
+            shell=True,
+        )
+
+    # 3. Wait for API to be ready
+    print(f"Waiting for API on port {API_PORT}...")
+    import urllib.request
+
+    try:
+        for _ in range(120):
+            try:
+                urllib.request.urlopen(f"http://localhost:{API_PORT}/", timeout=1)
+                print(f"API ready on port {API_PORT} (release mode). Run 'invoke bench' in another terminal.")
+                break
+            except Exception:
+                _time.sleep(1)
+        else:
+            print("Warning: API did not respond within 120s")
+    except KeyboardInterrupt:
+        _cleanup()
+        sys.exit(0)
+
+    # 4. Keep running until Ctrl-C
+    try:
+        api_proc.wait()
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+        _cleanup()
+
+
+@task
 def bench(c, duration="10s", threads=4, connections=50):
     """Load test the API (requires running server). Uses wrk."""
     c.run(
-        f"DURATION={duration} THREADS={threads} CONNECTIONS={connections} "
+        f"PORT={API_PORT} DURATION={duration} THREADS={threads} CONNECTIONS={connections} "
         "bash tools/bench.sh",
         pty=True,
     )

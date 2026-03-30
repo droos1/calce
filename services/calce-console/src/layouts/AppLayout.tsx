@@ -10,6 +10,7 @@ const segmentLabels: Record<string, string> = {
   users: 'Users',
   instruments: 'Instruments',
   'fx-rates': 'FX Rates',
+  simulator: 'Price Simulator',
   design: 'Design System',
 }
 

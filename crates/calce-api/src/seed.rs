@@ -58,7 +58,6 @@ pub(crate) fn seed_market_data() -> InMemoryMarketDataService {
     svc.add_allocation(&spy, "sector", "Real Estate", 0.02);
     svc.add_allocation(&spy, "sector", "Materials", 0.02);
 
-    svc.freeze();
     svc
 }
 
@@ -165,10 +164,11 @@ pub(crate) fn seed_user_data() -> UserDataStore {
 mod tests {
     use super::*;
     use calce_core::calc::volatility::calculate_volatility;
+    use calce_data::ConcurrentMarketData;
 
     #[test]
     fn volatility_sanity_check_with_seed_data() {
-        let md = seed_market_data();
+        let md = ConcurrentMarketData::from_builder(seed_market_data());
         let today = date(2025, 3, 14);
         let aapl = InstrumentId::new("AAPL");
         let vow3 = InstrumentId::new("VOW3");

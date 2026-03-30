@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use calce_core::domain::instrument::{InstrumentId, InstrumentType};
 
+use crate::concurrent_market_data::ConcurrentMarketData;
 use crate::error::DataResult;
 use crate::in_memory_market_data::InMemoryMarketDataService;
 use crate::market_data_store::{InstrumentSummary, MarketDataStore};
@@ -74,7 +75,7 @@ pub async fn load_from_postgres(pool: &PgPool) -> DataResult<(MarketDataStore, U
             }
         }
     }
-    md.freeze();
+    let concurrent = ConcurrentMarketData::from_builder(md);
 
     let mut ud = UserDataStore::new();
     for trade in trades {
@@ -86,11 +87,11 @@ pub async fn load_from_postgres(pool: &PgPool) -> DataResult<(MarketDataStore, U
         "Data loaded: {} users, {} instruments, {} prices, {} FX rates",
         ud.user_count(),
         instruments.len(),
-        md.price_count(),
-        md.fx_rate_count(),
+        concurrent.price_count(),
+        concurrent.fx_rate_count(),
     );
 
-    let market_store = MarketDataStore::from_parts(md, instruments);
+    let market_store = MarketDataStore::from_parts(concurrent, instruments);
 
     Ok((market_store, ud))
 }

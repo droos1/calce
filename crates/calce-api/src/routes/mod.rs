@@ -2,6 +2,7 @@ mod api_keys;
 pub mod auth;
 mod calc;
 mod organizations;
+mod simulator;
 mod users;
 
 use axum::Router;
@@ -28,4 +29,8 @@ pub fn auth_routes() -> Router<AppState> {
 
 pub fn api_key_routes() -> Router<AppState> {
     api_keys::routes()
+}
+
+pub fn simulator_routes() -> Router<AppState> {
+    simulator::routes()
 }

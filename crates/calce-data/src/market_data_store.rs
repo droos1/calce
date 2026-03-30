@@ -3,10 +3,11 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
+use crate::concurrent_market_data::ConcurrentMarketData;
 use crate::in_memory_market_data::InMemoryMarketDataService;
 
 pub struct MarketDataStore {
-    market_data: Arc<InMemoryMarketDataService>,
+    market_data: Arc<ConcurrentMarketData>,
     instruments: HashMap<i64, InstrumentSummary>,
 }
 
@@ -32,7 +33,8 @@ pub struct InstrumentSummary {
 
 impl MarketDataStore {
     pub fn from_memory(md: InMemoryMarketDataService) -> Self {
-        let instruments: HashMap<i64, InstrumentSummary> = md
+        let concurrent = ConcurrentMarketData::from_builder(md);
+        let instruments: HashMap<i64, InstrumentSummary> = concurrent
             .instrument_ids()
             .into_iter()
             .enumerate()
@@ -51,13 +53,13 @@ impl MarketDataStore {
             .collect();
 
         Self {
-            market_data: Arc::new(md),
+            market_data: Arc::new(concurrent),
             instruments,
         }
     }
 
     pub(crate) fn from_parts(
-        md: InMemoryMarketDataService,
+        md: ConcurrentMarketData,
         instruments: Vec<InstrumentSummary>,
     ) -> Self {
         let instruments = instruments.into_iter().map(|i| (i.id, i)).collect();
@@ -67,13 +69,12 @@ impl MarketDataStore {
         }
     }
 
-    /// Consume the store and return the inner market data service and instrument list.
-    pub fn into_parts(self) -> (InMemoryMarketDataService, Vec<InstrumentSummary>) {
-        let md = Arc::try_unwrap(self.market_data).unwrap_or_else(|arc| (*arc).clone());
-        (md, self.instruments.into_values().collect())
+    /// Consume the store and return the instrument list.
+    pub fn into_instruments(self) -> Vec<InstrumentSummary> {
+        self.instruments.into_values().collect()
     }
 
-    pub fn market_data(&self) -> Arc<InMemoryMarketDataService> {
+    pub fn market_data(&self) -> Arc<ConcurrentMarketData> {
         Arc::clone(&self.market_data)
     }
 
@@ -135,7 +136,6 @@ mod tests {
         let mut md = InMemoryMarketDataService::new();
         md.add_price(&aapl, date(2025, 1, 10), Price::new(150.0));
         md.add_fx_rate(FxRate::new(usd, sek, 10.5), date(2025, 1, 10));
-        md.freeze();
 
         let store = MarketDataStore::from_memory(md);
         let arc = store.market_data();
@@ -154,7 +154,8 @@ mod tests {
             instrument_type: "stock".to_owned(),
             allocations: HashMap::new(),
         }];
-        let store = MarketDataStore::from_parts(md, instruments);
+        let concurrent = ConcurrentMarketData::from_builder(md);
+        let store = MarketDataStore::from_parts(concurrent, instruments);
         assert_eq!(store.get_instrument(42).unwrap().ticker, "AAPL");
         assert!(store.get_instrument(999).is_none());
     }

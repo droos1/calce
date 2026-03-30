@@ -1,12 +1,19 @@
 use std::sync::Arc;
 
+use calce_core::domain::currency::Currency;
+use calce_core::domain::instrument::InstrumentId;
 use calce_data::auth::AuthConfig;
 use calce_data::auth::api_key::ApiKeyCache;
 use calce_data::market_data_store::MarketDataStore;
 use calce_data::user_data_store::UserDataStore;
+use calce_ds::pubsub::PubSub;
 use sqlx::PgPool;
 
 use crate::rate_limit::KeyedRateLimiter;
+use crate::simulator::Simulator;
+
+pub type PricePubSub = PubSub<InstrumentId>;
+pub type FxPubSub = PubSub<(Currency, Currency)>;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -16,6 +23,9 @@ pub struct AppState {
     pub auth_config: AuthConfig,
     pub api_key_cache: ApiKeyCache,
     pub auth_rate_limiter: Arc<KeyedRateLimiter>,
+    pub simulator: Option<Arc<Simulator>>,
+    pub price_pubsub: Option<Arc<PricePubSub>>,
+    pub fx_pubsub: Option<Arc<FxPubSub>>,
 }
 
 impl AppState {

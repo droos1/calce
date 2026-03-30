@@ -3,7 +3,6 @@ use pyo3::prelude::*;
 
 use calce_core::domain::currency::Currency;
 use calce_core::domain::instrument::InstrumentId;
-use calce_core::services::market_data::MarketDataService;
 use calce_data::auth::SecurityContext;
 use calce_data::market_data_store::InstrumentSummary;
 use calce_data::user_data_store::UserSummary;
@@ -50,9 +49,10 @@ impl DataService {
         let price_count = market_store.price_count();
         let fx_rate_count = market_store.fx_rate_count();
 
-        let (md_inner, instruments) = market_store.into_parts();
+        let md_arc = market_store.market_data();
+        let instruments = market_store.into_instruments();
 
-        let market_data = Py::new(py, MarketData { inner: md_inner })?;
+        let market_data = Py::new(py, MarketData::from_concurrent(md_arc))?;
         let user_data = Py::new(py, UserData { inner: user_store })?;
 
         Ok(Self {
@@ -98,7 +98,7 @@ impl DataService {
         let md = self.market_data.borrow(py);
         let iid = InstrumentId::new(instrument_id);
         let history = md
-            .inner
+            .as_service()
             .get_price_history(&iid, from_date, to_date)
             .map_err(calce_err_to_py)?;
         Ok(history

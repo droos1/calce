@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod concurrent_market_data;
 pub mod config;
 pub mod error;
 pub mod in_memory_market_data;
@@ -9,4 +10,5 @@ pub mod queries;
 pub mod types;
 pub mod user_data_store;
 
+pub use concurrent_market_data::ConcurrentMarketData;
 pub use in_memory_market_data::InMemoryMarketDataService;

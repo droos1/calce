@@ -192,6 +192,14 @@ export function IconSortDesc({ size = 16, className }: IconProps) {
   );
 }
 
+export function IconActivity({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" className={className} {...defaults}>
+      <polyline points="1 8 4 8 6 3 8 13 10 6 12 8 15 8" />
+    </svg>
+  );
+}
+
 export function IconCurrency({ size = 16, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" className={className} {...defaults}>
