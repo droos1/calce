@@ -6,9 +6,19 @@ pub mod wire;
 pub use error::CdcError;
 pub use listener::CdcListener;
 
+use std::collections::HashMap;
+
 use calce_core::domain::currency::Currency;
 use calce_core::domain::instrument::InstrumentId;
 use chrono::NaiveDate;
+
+/// The kind of DML operation that triggered a CDC event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CdcOperation {
+    Insert,
+    Update,
+    Delete,
+}
 
 /// CDC listener configuration.
 pub struct CdcConfig {
@@ -53,5 +63,12 @@ pub enum CdcEvent {
         to_currency: Currency,
         date: NaiveDate,
         rate: f64,
+    },
+    /// A row changed in a table without a typed handler (generic catchall).
+    EntityChanged {
+        table: String,
+        operation: CdcOperation,
+        /// Column name to text value. `None` for NULL or unchanged-toast.
+        columns: HashMap<String, Option<String>>,
     },
 }

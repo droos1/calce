@@ -61,6 +61,8 @@ type SubscriberMap<K> =
 struct SubscriptionRegistry<K: Hash + Eq> {
     per_key: SubscriberMap<K>,
     per_subscriber: DashMap<SubscriberId, Vec<K>, FxBuildHasher>,
+    /// Subscribers that receive every event regardless of key.
+    broadcast: DashMap<SubscriberId, mpsc::Sender<UpdateEvent<K>>, FxBuildHasher>,
     next_id: AtomicU64,
 }
 
@@ -69,6 +71,7 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> SubscriptionRegistry<K> {
         Self {
             per_key: DashMap::with_hasher(FxBuildHasher),
             per_subscriber: DashMap::with_hasher(FxBuildHasher),
+            broadcast: DashMap::with_hasher(FxBuildHasher),
             next_id: AtomicU64::new(1),
         }
     }
@@ -95,7 +98,15 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> SubscriptionRegistry<K> {
         Subscription { id, receiver: rx }
     }
 
+    fn subscribe_all(&self, buffer_size: usize) -> Subscription<K> {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let (tx, rx) = mpsc::channel(buffer_size.max(1));
+        self.broadcast.insert(id, tx);
+        Subscription { id, receiver: rx }
+    }
+
     fn unsubscribe(&self, id: SubscriberId) {
+        self.broadcast.remove(&id);
         if let Some((_, keys)) = self.per_subscriber.remove(&id) {
             for key in keys {
                 if let Some(mut subs) = self.per_key.get_mut(&key) {
@@ -107,7 +118,8 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> SubscriptionRegistry<K> {
         }
     }
 
-    /// Fan out a coalesced event to all subscribers of that key.
+    /// Fan out a coalesced event to all subscribers of that key and all
+    /// broadcast subscribers.
     /// Returns (sent, dropped).
     #[allow(clippy::needless_pass_by_value)] // event is cloned per subscriber
     fn fan_out(&self, event: UpdateEvent<K>) -> (u64, u64) {
@@ -134,8 +146,31 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> SubscriptionRegistry<K> {
             }
         }
 
+        // Broadcast subscribers receive every event.
+        let mut dead_broadcast: Vec<SubscriberId> = Vec::new();
+        for entry in &self.broadcast {
+            let (sid, tx) = entry.pair();
+            match tx.try_send(event.clone()) {
+                Ok(()) => sent += 1,
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    tracing::warn!(
+                        subscriber = sid,
+                        "broadcast subscriber buffer full, dropping notification"
+                    );
+                    dropped += 1;
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => {
+                    dropped += 1;
+                    dead_broadcast.push(*sid);
+                }
+            }
+        }
+
         for sid in dead {
             self.unsubscribe(sid);
+        }
+        for sid in dead_broadcast {
+            self.broadcast.remove(&sid);
         }
 
         (sent, dropped)
@@ -225,6 +260,11 @@ impl<K: Hash + Eq + Clone + Send + Sync + 'static> PubSub<K> {
     /// Subscribe to updates for specific keys.
     pub fn subscribe(&self, keys: &[K], buffer_size: usize) -> Subscription<K> {
         self.registry.subscribe(keys, buffer_size)
+    }
+
+    /// Subscribe to all events regardless of key.
+    pub fn subscribe_all(&self, buffer_size: usize) -> Subscription<K> {
+        self.registry.subscribe_all(buffer_size)
     }
 
     /// Unsubscribe by id.

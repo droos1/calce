@@ -139,3 +139,9 @@ export interface DbSimulatorStats {
   fx_writes: number;
   errors: number;
 }
+
+export interface EntityChangeEvent {
+  type: "entity";
+  table: string;
+  id: string;
+}

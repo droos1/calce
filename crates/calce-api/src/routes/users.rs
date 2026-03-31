@@ -72,6 +72,7 @@ async fn get_user(
 #[derive(Deserialize)]
 struct UpdateUserRequest {
     name: Option<String>,
+    email: Option<String>,
 }
 
 async fn update_user(
@@ -81,8 +82,12 @@ async fn update_user(
     Json(body): Json<UpdateUserRequest>,
 ) -> Result<Json<User>, ApiError> {
     auth::require_access(&ctx, &user_id)?;
+    // Email changes require admin privileges.
+    if body.email.is_some() {
+        auth::require_admin(&ctx)?;
+    }
     let user = repo(&state)?
-        .update_user_name(&user_id, body.name.as_deref())
+        .update_user(&user_id, body.name.as_deref(), body.email.as_deref())
         .await?;
     Ok(Json(user))
 }

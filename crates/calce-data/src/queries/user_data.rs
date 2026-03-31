@@ -266,19 +266,22 @@ impl UserDataRepo {
         .map_err(|e| DataError::from_constraint_violation(e, "user", external_id))
     }
 
-    pub async fn update_user_name(
+    pub async fn update_user(
         &self,
         external_id: &str,
         name: Option<&str>,
+        email: Option<&str>,
     ) -> DataResult<User> {
         sqlx::query_as::<_, User>(
-            "UPDATE users SET name = $2 WHERE external_id = $1 \
+            "UPDATE users SET name = COALESCE($2, name), email = COALESCE($3, email) \
+             WHERE external_id = $1 \
              RETURNING external_id, email, name, \
              (SELECT o.external_id FROM organizations o WHERE o.id = users.organization_id) AS organization_id, \
              created_at",
         )
         .bind(external_id)
         .bind(name)
+        .bind(email)
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| DataError::NotFound(format!("user '{external_id}'")))

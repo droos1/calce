@@ -88,7 +88,10 @@ pub(crate) enum PgOutputMessage {
         relation_id: u32,
         new_tuple: Vec<TupleValue>,
     },
-    Delete,
+    Delete {
+        relation_id: u32,
+        key_tuple: Vec<TupleValue>,
+    },
 }
 
 /// Schema info for a replicated table, received before any DML for that table.
@@ -165,8 +168,18 @@ impl PgOutputMessage {
                 }))
             }
             b'D' => {
-                // We don't process deletes for prices/FX — just skip the payload
-                Ok(Some(Self::Delete))
+                ensure_remaining_slice(buf, 5, "Delete")?;
+                let relation_id = buf.get_u32();
+                let key_tag = buf.get_u8();
+                let key_tuple = if key_tag == b'K' || key_tag == b'O' {
+                    parse_tuple(&mut buf)?
+                } else {
+                    Vec::new()
+                };
+                Ok(Some(Self::Delete {
+                    relation_id,
+                    key_tuple,
+                }))
             }
             // Truncate ('T'), Origin ('O'), Type ('Y'), Message ('M')
             _ => Ok(None),

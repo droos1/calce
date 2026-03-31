@@ -2,6 +2,7 @@ mod api_keys;
 pub mod auth;
 mod calc;
 mod db_simulator;
+mod events;
 mod organizations;
 mod simulator;
 mod users;
@@ -36,4 +37,8 @@ pub fn simulator_routes() -> Router<AppState> {
 
 pub fn db_simulator_routes() -> Router<AppState> {
     db_simulator::routes()
+}
+
+pub fn event_routes() -> Router<AppState> {
+    events::routes()
 }

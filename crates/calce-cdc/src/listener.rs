@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 use crate::error::CdcError;
 use crate::protocol::{self, Lsn, PgOutputMessage, RelationInfo, TupleValue};
 use crate::wire::{ConnParams, PgStream};
-use crate::{CdcConfig, CdcEvent};
+use crate::{CdcConfig, CdcEvent, CdcOperation};
 
 /// Streams database changes and sends typed [`CdcEvent`]s on a channel.
 pub struct CdcListener {
@@ -127,11 +127,33 @@ impl CdcListener {
         if rows.is_empty() {
             stream
                 .simple_query(&format!(
-                    "CREATE PUBLICATION {} FOR TABLE prices, fx_rates, trades, instruments",
+                    "CREATE PUBLICATION {} FOR TABLE prices, fx_rates, trades, instruments, users",
                     self.config.publication_name,
                 ))
                 .await?;
             tracing::info!("Created publication '{}'", self.config.publication_name);
+        } else {
+            // Ensure the users table is included in existing publications.
+            let table_rows = stream
+                .simple_query(&format!(
+                    "SELECT tablename FROM pg_publication_tables WHERE pubname = '{}'",
+                    self.config.publication_name,
+                ))
+                .await?;
+            let has_users = table_rows.iter().any(|r| {
+                r.first()
+                    .and_then(Option::as_deref)
+                    .is_some_and(|name| name == "users")
+            });
+            if !has_users {
+                stream
+                    .simple_query(&format!(
+                        "ALTER PUBLICATION {} ADD TABLE users",
+                        self.config.publication_name,
+                    ))
+                    .await?;
+                tracing::info!("Added users table to publication");
+            }
         }
         Ok(())
     }
@@ -192,17 +214,42 @@ impl CdcListener {
                 schema_cache.insert(info.id, info);
             }
             PgOutputMessage::Insert { relation_id, tuple } => {
-                self.emit_event(relation_id, &tuple, schema_cache, instrument_map)
-                    .await?;
+                self.emit_event(
+                    relation_id,
+                    &tuple,
+                    CdcOperation::Insert,
+                    schema_cache,
+                    instrument_map,
+                )
+                .await?;
             }
             PgOutputMessage::Update {
                 relation_id,
                 new_tuple,
             } => {
-                self.emit_event(relation_id, &new_tuple, schema_cache, instrument_map)
-                    .await?;
+                self.emit_event(
+                    relation_id,
+                    &new_tuple,
+                    CdcOperation::Update,
+                    schema_cache,
+                    instrument_map,
+                )
+                .await?;
             }
-            PgOutputMessage::Begin | PgOutputMessage::Commit | PgOutputMessage::Delete => {}
+            PgOutputMessage::Delete {
+                relation_id,
+                key_tuple,
+            } => {
+                self.emit_event(
+                    relation_id,
+                    &key_tuple,
+                    CdcOperation::Delete,
+                    schema_cache,
+                    instrument_map,
+                )
+                .await?;
+            }
+            PgOutputMessage::Begin | PgOutputMessage::Commit => {}
         }
         Ok(())
     }
@@ -211,10 +258,13 @@ impl CdcListener {
         &self,
         relation_id: u32,
         tuple: &[TupleValue],
+        operation: CdcOperation,
         schema_cache: &HashMap<u32, RelationInfo>,
         instrument_map: &HashMap<i64, String>,
     ) -> Result<(), CdcError> {
-        if let Some(event) = map_to_event(relation_id, tuple, schema_cache, instrument_map) {
+        if let Some(event) =
+            map_to_event(relation_id, tuple, operation, schema_cache, instrument_map)
+        {
             tracing::debug!(?event, "CDC event");
             if self.event_tx.send(event).await.is_err() {
                 return Err(CdcError::ChannelClosed);
@@ -231,13 +281,14 @@ impl CdcListener {
 fn map_to_event(
     relation_id: u32,
     tuple: &[TupleValue],
+    operation: CdcOperation,
     schema_cache: &HashMap<u32, RelationInfo>,
     instrument_map: &HashMap<i64, String>,
 ) -> Option<CdcEvent> {
     let relation = schema_cache.get(&relation_id)?;
 
     match relation.name.as_str() {
-        "prices" => {
+        "prices" if operation != CdcOperation::Delete => {
             let db_id: i64 = col_text(relation, tuple, "instrument_id")?.parse().ok()?;
             let ticker = instrument_map.get(&db_id)?;
             let date = col_date(relation, tuple, "price_date")?;
@@ -248,7 +299,7 @@ fn map_to_event(
                 price,
             })
         }
-        "fx_rates" => {
+        "fx_rates" if operation != CdcOperation::Delete => {
             let from = col_text(relation, tuple, "from_currency")?;
             let to = col_text(relation, tuple, "to_currency")?;
             let date = col_date(relation, tuple, "rate_date")?;
@@ -260,8 +311,33 @@ fn map_to_event(
                 rate,
             })
         }
-        _ => None,
+        _ => {
+            let columns = build_column_map(relation, tuple);
+            Some(CdcEvent::EntityChanged {
+                table: relation.name.clone(),
+                operation,
+                columns,
+            })
+        }
     }
+}
+
+fn build_column_map(
+    relation: &RelationInfo,
+    tuple: &[TupleValue],
+) -> std::collections::HashMap<String, Option<String>> {
+    relation
+        .columns
+        .iter()
+        .zip(tuple.iter())
+        .map(|(col, val)| {
+            let v = match val {
+                TupleValue::Text(s) => Some(s.clone()),
+                _ => None,
+            };
+            (col.name.clone(), v)
+        })
+        .collect()
 }
 
 // -- Column value helpers -----------------------------------------------------

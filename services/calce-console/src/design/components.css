@@ -1140,6 +1140,10 @@ a.ds-stat--clickable:hover {
   margin-bottom: var(--spacing-xl);
 }
 
+.ds-mt-md {
+  margin-top: var(--spacing-md);
+}
+
 .ds-mt-xl {
   margin-top: var(--spacing-xl);
 }

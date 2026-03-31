@@ -1,25 +1,65 @@
 import { useParams, Link, useNavigate } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { api } from '../api/client'
 import type { AccountSummary, PositionSummary, TradeSummary } from '../api/types'
+import { useAuth } from '../auth/AuthContext'
 import { IconChevronLeft } from '../components/icons'
 import Card from '../components/Card'
 import Badge from '../components/Badge'
+import Button from '../components/Button'
+import Input from '../components/Input'
 import DataTable from '../components/DataTable'
 import Spinner from '../components/Spinner'
 import { usePageTitle } from '../hooks/usePageTitle'
+import { useEntityEvents } from '../hooks/useEntityEvents'
 
 export default function UserDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { user: authUser } = useAuth()
+  const queryClient = useQueryClient()
+  const isAdmin = authUser?.role === 'admin'
+
+  const [editing, setEditing] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editEmail, setEditEmail] = useState('')
+
+  useEntityEvents(['users'])
 
   const { data: user, isLoading: userLoading, error: userError } = useQuery({
     queryKey: ['user', id],
     queryFn: () => api.getUser(id!),
     enabled: !!id,
   })
+
+  const updateMutation = useMutation({
+    mutationFn: (body: { name?: string; email?: string }) =>
+      api.updateUser(id!, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user', id] })
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+      setEditing(false)
+    },
+  })
+
+  function startEditing() {
+    setEditName(user?.name || '')
+    setEditEmail(user?.email || '')
+    setEditing(true)
+  }
+
+  function saveEdit() {
+    const body: { name?: string; email?: string } = {}
+    if (editName !== (user?.name || '')) body.name = editName
+    if (isAdmin && editEmail !== (user?.email || '')) body.email = editEmail
+    if (Object.keys(body).length > 0) {
+      updateMutation.mutate(body)
+    } else {
+      setEditing(false)
+    }
+  }
 
   usePageTitle(user?.name || user?.email || id || 'User')
 
@@ -196,14 +236,39 @@ export default function UserDetailPage() {
         </div>
       </div>
 
-      <Card header="User Details">
+      <Card
+        header="User Details"
+        actions={
+          !editing ? (
+            <Button variant="outline" size="sm" onClick={startEditing}>
+              Edit
+            </Button>
+          ) : undefined
+        }
+      >
         <div className="ds-kv-grid">
           <span className="ds-kv-grid__label">ID</span>
           <span className="ds-text--mono">{user.id}</span>
           <span className="ds-kv-grid__label">Name</span>
-          <span>{user.name || '-'}</span>
+          {editing ? (
+            <Input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder="Name"
+            />
+          ) : (
+            <span>{user.name || '-'}</span>
+          )}
           <span className="ds-kv-grid__label">Email</span>
-          <span>{user.email || '-'}</span>
+          {editing && isAdmin ? (
+            <Input
+              value={editEmail}
+              onChange={(e) => setEditEmail(e.target.value)}
+              placeholder="Email"
+            />
+          ) : (
+            <span>{user.email || '-'}</span>
+          )}
           <span className="ds-kv-grid__label">Organization</span>
           <span>{user.organization_name || '-'}</span>
           <span className="ds-kv-grid__label">Accounts</span>
@@ -211,6 +276,26 @@ export default function UserDetailPage() {
           <span className="ds-kv-grid__label">Trades</span>
           <span>{user.trade_count}</span>
         </div>
+        {editing && (
+          <div className="ds-flex ds-flex--center ds-flex--gap-2 ds-mt-md">
+            <Button size="sm" onClick={saveEdit} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? 'Saving...' : 'Save'}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setEditing(false)}
+              disabled={updateMutation.isPending}
+            >
+              Cancel
+            </Button>
+            {updateMutation.isError && (
+              <span className="ds-text--error">
+                {updateMutation.error?.message || 'Failed to save'}
+              </span>
+            )}
+          </div>
+        )}
       </Card>
 
       <Card header="Accounts" className="ds-mt-xl">

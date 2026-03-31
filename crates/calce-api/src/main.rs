@@ -35,6 +35,7 @@ fn build_router(state: AppState) -> Router {
         .merge(routes::api_key_routes())
         .merge(routes::simulator_routes())
         .merge(routes::db_simulator_routes())
+        .merge(routes::event_routes())
         .layer(CorsLayer::very_permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -80,14 +81,16 @@ async fn main() {
     // Wire PubSub to market data caches.
     let price_pubsub = PubSub::new(Duration::from_millis(50), 8192);
     let fx_pubsub = PubSub::new(Duration::from_millis(50), 4096);
+    let entity_pubsub = PubSub::new(Duration::from_millis(100), 4096);
     md.enable_price_notifications(price_pubsub.event_sender());
     md.enable_fx_notifications(fx_pubsub.event_sender());
     price_pubsub.start();
     fx_pubsub.start();
+    entity_pubsub.start();
     tracing::info!("PubSub dispatchers started");
 
     // Start CDC listener for live database updates.
-    let _cdc = calce_data::cdc::start_cdc(Arc::clone(&md));
+    let _cdc = calce_data::cdc::start_cdc(Arc::clone(&md), entity_pubsub.event_sender());
 
     let sim = Arc::new(simulator::Simulator::new(Arc::clone(&md)));
     let db_sim = Arc::new(db_simulator::DbSimulator::new(
@@ -106,6 +109,7 @@ async fn main() {
         db_simulator: Some(db_sim),
         price_pubsub: Some(Arc::new(price_pubsub)),
         fx_pubsub: Some(Arc::new(fx_pubsub)),
+        entity_pubsub: Some(Arc::new(entity_pubsub)),
     };
 
     let app = build_router(state);
@@ -141,6 +145,7 @@ mod tests {
             db_simulator: None,
             price_pubsub: None,
             fx_pubsub: None,
+            entity_pubsub: None,
         }
     }
 

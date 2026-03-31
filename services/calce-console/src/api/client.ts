@@ -216,6 +216,20 @@ export const api = {
     return fetchApi<Price[]>(`/v1/data/fx-rates/${from}/${to}/history${qs}`);
   },
 
+  updateUser(
+    id: string,
+    body: { name?: string; email?: string },
+  ): Promise<User> {
+    return fetchApi<User>(`/v1/users/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  },
+
+  deleteUser(id: string): Promise<void> {
+    return fetchApi<void>(`/v1/users/${id}`, { method: "DELETE" });
+  },
+
   getOrganizations(): Promise<Organization[]> {
     return fetchApi<Organization[]>("/v1/organizations");
   },

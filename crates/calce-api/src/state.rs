@@ -15,6 +15,7 @@ use crate::simulator::Simulator;
 
 pub type PricePubSub = PubSub<InstrumentId>;
 pub type FxPubSub = PubSub<(Currency, Currency)>;
+pub type EntityPubSub = PubSub<String>;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -28,6 +29,7 @@ pub struct AppState {
     pub db_simulator: Option<Arc<DbSimulator>>,
     pub price_pubsub: Option<Arc<PricePubSub>>,
     pub fx_pubsub: Option<Arc<FxPubSub>>,
+    pub entity_pubsub: Option<Arc<EntityPubSub>>,
 }
 
 impl AppState {

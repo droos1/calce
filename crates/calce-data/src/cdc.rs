@@ -1,8 +1,10 @@
 //! CDC integration: starts a background listener that applies database changes
-//! to the in-memory caches.
+//! to the in-memory caches and notifies entity subscribers.
 
 use std::sync::Arc;
 
+use calce_datastructs::pubsub::UpdateEvent;
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::ConcurrentMarketData;
@@ -11,17 +13,20 @@ use crate::ConcurrentMarketData;
 ///
 /// Spawns two background tasks:
 /// 1. The [`calce_cdc::CdcListener`] that streams WAL changes from Postgres.
-/// 2. An event consumer that applies [`calce_cdc::CdcEvent`]s to the cache via
-///    `set_current_price` / `set_current_fx_rate`.
+/// 2. An event consumer that applies market-data events to the cache and
+///    forwards entity events to the `entity_tx` channel.
 ///
 /// Returns `None` if CDC is disabled or `DATABASE_URL` is not set.
 #[must_use]
-pub fn start_cdc(md: Arc<ConcurrentMarketData>) -> Option<JoinHandle<()>> {
+pub fn start_cdc(
+    md: Arc<ConcurrentMarketData>,
+    entity_tx: mpsc::Sender<UpdateEvent<String>>,
+) -> Option<JoinHandle<()>> {
     let config = calce_cdc::CdcConfig::from_env()?;
 
     let (listener, mut rx) = calce_cdc::CdcListener::new(config, 4096);
 
-    // Consumer task: apply events to the cache
+    // Consumer task: route events to the appropriate destination
     tokio::spawn(async move {
         while let Some(event) = rx.recv().await {
             match event {
@@ -45,6 +50,21 @@ pub fn start_cdc(md: Arc<ConcurrentMarketData>) -> Option<JoinHandle<()>> {
                             "CDC FX update failed for {from_currency}/{to_currency}: {e}"
                         );
                     }
+                }
+                calce_cdc::CdcEvent::EntityChanged {
+                    table,
+                    columns,
+                    ..
+                } => {
+                    let entity_id = columns
+                        .get("external_id")
+                        .or_else(|| columns.get("id"))
+                        .and_then(|v| v.as_deref())
+                        .unwrap_or("unknown");
+                    let key = format!("{table}:{entity_id}");
+                    let _ = entity_tx
+                        .send(UpdateEvent::CurrentChanged { key })
+                        .await;
                 }
             }
         }
