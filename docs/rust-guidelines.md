@@ -29,14 +29,11 @@ calce-api
 - `calce-python` depends only on `calce-core`, keeping the cdylib small and free of DB deps.
 - `calce-api` is the only crate that depends on both `calce-core` and `calce-data`.
 
-## In-Memory Service Implementations
+## Market Data Loading
 
-The `InMemory*Service` types in `services/` serve two roles:
+`MarketDataBuilder` (calce-data) accumulates prices, FX rates, and instrument metadata, then `ConcurrentMarketData::from_builder()` materialises it into a lock-free concurrent store. This is used both at startup (Postgres bulk-load) and in tests.
 
-1. **Sync bridge** — `DataService` in calce-data loads data async from Postgres, packs it into `InMemoryMarketDataService`, then hands it to sync calce-core calc functions. This is the core async/sync bridging pattern.
-2. **Test doubles** — unit tests construct them directly with known data.
-
-Because of role 1, these types are always available (not gated behind `#[cfg(test)]`). They are lightweight data holders with no database dependencies.
+Calc functions take `&dyn MarketDataService`, satisfied by `ConcurrentMarketData` at runtime and by `TestMarketData` (calce-core) in unit tests.
 
 ## Domain Types Are Data Carriers
 
@@ -131,7 +128,7 @@ Prefer `#[derive(...)]` over manual trait impls when the derived behavior is cor
 ```rust
 // Good — derive does exactly what the manual impl would
 #[derive(Default)]
-pub struct InMemoryMarketDataService {
+pub struct MarketDataBuilder {
     prices: HashMap<...>,
     fx_rates: HashMap<...>,
 }
@@ -249,12 +246,13 @@ This avoids circular dependencies (domain types don't import `CalceError`) and k
 
 ## Test Patterns
 
-**Calculation function tests** — construct positions and an `InMemoryMarketDataService`. No auth, no user data, just the calculation:
+**Calculation function tests** — construct positions and a `MarketDataBuilder` → `ConcurrentMarketData`. No auth, no user data, just the calculation:
 ```rust
-let mut market_data = InMemoryMarketDataService::new();
-market_data.add_price(&aapl, date, Price::new(150.0));
+let mut b = MarketDataBuilder::new();
+b.add_price(&aapl, date, Price::new(150.0));
+let md = ConcurrentMarketData::from_builder(b);
 let ctx = CalculationContext::new(usd, date);
-let outcome = value_positions(&positions, &ctx, &market_data).unwrap();
+let outcome = value_positions(&positions, &ctx, &md).unwrap();
 assert_eq!(outcome.value.total.amount, 15000.0);
 ```
 

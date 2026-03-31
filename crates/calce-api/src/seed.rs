@@ -6,7 +6,7 @@ use calce_core::domain::price::Price;
 use calce_core::domain::quantity::Quantity;
 use calce_core::domain::trade::Trade;
 use calce_core::domain::user::UserId;
-use calce_data::InMemoryMarketDataService;
+use calce_data::MarketDataBuilder;
 use calce_data::user_data_store::{UserDataStore, UserSummary};
 use chrono::{Datelike, NaiveDate};
 
@@ -14,8 +14,8 @@ fn date(y: i32, m: u32, d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, d).expect("valid seed date")
 }
 
-pub(crate) fn seed_market_data() -> InMemoryMarketDataService {
-    let mut svc = InMemoryMarketDataService::new();
+pub(crate) fn seed_market_data() -> MarketDataBuilder {
+    let mut svc = MarketDataBuilder::new();
 
     let usd = Currency::new("USD");
     let eur = Currency::new("EUR");
@@ -66,7 +66,7 @@ pub(crate) fn seed_market_data() -> InMemoryMarketDataService {
 /// Produces a deterministic, reproducible price series useful for seed data
 /// and sanity-checking calculations.
 fn add_daily_prices(
-    svc: &mut InMemoryMarketDataService,
+    svc: &mut MarketDataBuilder,
     instrument: &InstrumentId,
     from: NaiveDate,
     to: NaiveDate,
@@ -90,7 +90,7 @@ fn add_daily_prices(
 }
 
 fn add_daily_fx_rates(
-    svc: &mut InMemoryMarketDataService,
+    svc: &mut MarketDataBuilder,
     from: NaiveDate,
     to: NaiveDate,
     base: Currency,

@@ -8,17 +8,14 @@ use calce_core::domain::fx_rate::FxRate;
 use calce_core::domain::instrument::{InstrumentId, InstrumentType};
 use calce_core::domain::price::Price;
 use calce_core::services::market_data::MarketDataService;
-use calce_data::InMemoryMarketDataService;
+use calce_data::MarketDataBuilder;
 use calce_data::concurrent_market_data::ConcurrentMarketData;
 use calce_data::user_data_store::UserDataStore;
 
 use crate::domain::Currency;
 
-/// Python-visible market data. Supports two modes:
-/// - **Building**: constructed in Python via `add_price` / `add_fx_rate`
-/// - **Ready**: loaded from Postgres, or after the first calculation materialises the builder
 enum MarketDataInner {
-    Builder(Box<InMemoryMarketDataService>),
+    Builder(Box<MarketDataBuilder>),
     Ready(Arc<ConcurrentMarketData>),
 }
 
@@ -35,27 +32,33 @@ impl MarketData {
         }
     }
 
-    /// Borrow the inner service as a trait object.
+    /// Borrow the concurrent cache as a trait object.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the builder has not been materialised via [`ensure_ready`].
     pub fn as_service(&self) -> &dyn MarketDataService {
         match &self.inner {
-            MarketDataInner::Builder(svc) => svc.as_ref(),
+            MarketDataInner::Builder(_) => {
+                panic!("MarketData not materialised — call ensure_ready() first")
+            }
             MarketDataInner::Ready(svc) => svc.as_ref(),
         }
     }
 
     /// Materialise the builder into a concurrent cache. No-op if already ready.
     pub fn ensure_ready(&mut self) {
-        if let MarketDataInner::Builder(svc) = &mut self.inner {
-            let builder = std::mem::replace(svc, Box::new(InMemoryMarketDataService::new()));
+        if let MarketDataInner::Builder(builder) = &mut self.inner {
+            let builder = std::mem::replace(builder, Box::new(MarketDataBuilder::new()));
             self.inner =
                 MarketDataInner::Ready(Arc::new(ConcurrentMarketData::from_builder(*builder)));
         }
     }
 }
 
-fn require_builder(inner: &mut MarketDataInner) -> PyResult<&mut InMemoryMarketDataService> {
+fn require_builder(inner: &mut MarketDataInner) -> PyResult<&mut MarketDataBuilder> {
     match inner {
-        MarketDataInner::Builder(svc) => Ok(svc),
+        MarketDataInner::Builder(b) => Ok(b),
         MarketDataInner::Ready(_) => Err(PyRuntimeError::new_err(
             "cannot add data after MarketData is materialised",
         )),
@@ -67,7 +70,7 @@ impl MarketData {
     #[new]
     fn new() -> Self {
         MarketData {
-            inner: MarketDataInner::Builder(Box::new(InMemoryMarketDataService::new())),
+            inner: MarketDataInner::Builder(Box::new(MarketDataBuilder::new())),
         }
     }
 

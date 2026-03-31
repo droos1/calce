@@ -4,7 +4,7 @@ use calce_core::domain::instrument::{InstrumentId, InstrumentType};
 
 use crate::concurrent_market_data::ConcurrentMarketData;
 use crate::error::DataResult;
-use crate::in_memory_market_data::InMemoryMarketDataService;
+use crate::market_data_builder::MarketDataBuilder;
 use crate::market_data_store::{InstrumentSummary, MarketDataStore};
 use crate::queries::market_data::MarketDataRepo;
 use crate::queries::user_data::UserDataRepo;
@@ -59,7 +59,7 @@ pub async fn load_from_postgres(pool: &PgPool) -> DataResult<(MarketDataStore, U
         )
         .collect();
 
-    let mut md = InMemoryMarketDataService::new();
+    let mut md = MarketDataBuilder::new();
     for (instrument, date, price) in all_prices {
         md.add_price(&instrument, date, price);
     }

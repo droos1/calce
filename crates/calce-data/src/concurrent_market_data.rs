@@ -12,7 +12,7 @@ use chrono::{Datelike, NaiveDate};
 use dashmap::DashMap;
 use tokio::sync::mpsc;
 
-use crate::in_memory_market_data::InMemoryMarketDataService;
+use crate::market_data_builder::MarketDataBuilder;
 
 fn day_ord(date: NaiveDate) -> i32 {
     date.num_days_from_ce()
@@ -34,44 +34,66 @@ pub struct ConcurrentMarketData {
 }
 
 impl ConcurrentMarketData {
-    /// Convert an [`InMemoryMarketDataService`] into a concurrent cache.
+    /// Materialise a [`MarketDataBuilder`] into a concurrent cache.
     ///
-    /// Freezes the builder (if not already frozen), then bulk-loads all data
-    /// into the lock-free caches.
+    /// Scatters accumulated data into dense date-indexed arrays, then
+    /// bulk-loads everything into lock-free caches.
     #[must_use]
-    pub fn from_builder(mut md: InMemoryMarketDataService) -> Self {
-        md.freeze();
-        let InMemoryMarketDataService {
-            base_day,
-            num_days,
-            prices: prices_map,
-            fx_rates: fx_map,
+    #[allow(clippy::cast_sign_loss)]
+    pub fn from_builder(builder: MarketDataBuilder) -> Self {
+        let MarketDataBuilder {
+            prices: pending_prices,
+            fx_rates: pending_fx,
             instrument_types: types_map,
             allocations: alloc_map,
-            ..
-        } = md;
+        } = builder;
 
+        // Find global date range across all data points.
+        let mut min_day = i32::MAX;
+        let mut max_day = i32::MIN;
+        for points in pending_prices.values() {
+            for &(d, _) in points {
+                min_day = min_day.min(d);
+                max_day = max_day.max(d);
+            }
+        }
+        for points in pending_fx.values() {
+            for &(d, _) in points {
+                min_day = min_day.min(d);
+                max_day = max_day.max(d);
+            }
+        }
+
+        if min_day > max_day {
+            return Self::empty();
+        }
+
+        let base_day = min_day;
+        let num_days = (max_day - min_day + 1) as usize;
+
+        // Scatter into dense arrays and bulk-load into lock-free caches.
         let prices = TimeSeriesCache::new();
-        prices.bulk_insert(prices_map.into_iter().map(|(id, history)| {
-            let current = last_non_nan(&history);
-            (id, current, history)
+        prices.bulk_insert(pending_prices.into_iter().map(|(id, points)| {
+            let mut arr = vec![f64::NAN; num_days];
+            for (d, v) in points {
+                arr[(d - base_day) as usize] = v;
+            }
+            let current = last_non_nan(&arr);
+            (id, current, arr)
         }));
 
         let fx_rates = TimeSeriesCache::new();
-        fx_rates.bulk_insert(fx_map.into_iter().map(|(pair, history)| {
-            let current = last_non_nan(&history);
-            (pair, current, history)
+        fx_rates.bulk_insert(pending_fx.into_iter().map(|(pair, points)| {
+            let mut arr = vec![f64::NAN; num_days];
+            for (d, v) in points {
+                arr[(d - base_day) as usize] = v;
+            }
+            let current = last_non_nan(&arr);
+            (pair, current, arr)
         }));
 
-        let instrument_types = DashMap::new();
-        for (id, itype) in types_map {
-            instrument_types.insert(id, itype);
-        }
-
-        let allocations = DashMap::new();
-        for (id, alloc) in alloc_map {
-            allocations.insert(id, alloc);
-        }
+        let instrument_types: DashMap<_, _> = types_map.into_iter().collect();
+        let allocations: DashMap<_, _> = alloc_map.into_iter().collect();
 
         Self {
             base_day,
@@ -80,6 +102,17 @@ impl ConcurrentMarketData {
             fx_rates,
             instrument_types,
             allocations,
+        }
+    }
+
+    fn empty() -> Self {
+        Self {
+            base_day: 0,
+            num_days: 0,
+            prices: TimeSeriesCache::new(),
+            fx_rates: TimeSeriesCache::new(),
+            instrument_types: DashMap::new(),
+            allocations: DashMap::new(),
         }
     }
 
@@ -451,26 +484,26 @@ mod tests {
         NaiveDate::from_ymd_opt(y, m, d).expect("valid test date")
     }
 
-    fn build_test_service() -> InMemoryMarketDataService {
+    fn build_test_builder() -> MarketDataBuilder {
         let aapl = InstrumentId::new("AAPL");
         let msft = InstrumentId::new("MSFT");
         let usd = Currency::new("USD");
         let sek = Currency::new("SEK");
 
-        let mut md = InMemoryMarketDataService::new();
-        md.add_price(&aapl, date(2025, 1, 10), Price::new(150.0));
-        md.add_price(&aapl, date(2025, 1, 13), Price::new(152.0));
-        md.add_price(&msft, date(2025, 1, 10), Price::new(400.0));
-        md.add_fx_rate(FxRate::new(usd, sek, 10.5), date(2025, 1, 10));
-        md.add_fx_rate(FxRate::new(usd, sek, 10.6), date(2025, 1, 13));
-        md.add_instrument_type(&aapl, InstrumentType::Stock);
-        md.add_allocation(&aapl, "sector", "Technology", 1.0);
-        md
+        let mut b = MarketDataBuilder::new();
+        b.add_price(&aapl, date(2025, 1, 10), Price::new(150.0));
+        b.add_price(&aapl, date(2025, 1, 13), Price::new(152.0));
+        b.add_price(&msft, date(2025, 1, 10), Price::new(400.0));
+        b.add_fx_rate(FxRate::new(usd, sek, 10.5), date(2025, 1, 10));
+        b.add_fx_rate(FxRate::new(usd, sek, 10.6), date(2025, 1, 13));
+        b.add_instrument_type(&aapl, InstrumentType::Stock);
+        b.add_allocation(&aapl, "sector", "Technology", 1.0);
+        b
     }
 
     #[test]
     fn from_builder_preserves_prices() {
-        let md = build_test_service();
+        let md = build_test_builder();
         let concurrent = ConcurrentMarketData::from_builder(md);
 
         let aapl = InstrumentId::new("AAPL");
@@ -484,7 +517,7 @@ mod tests {
 
     #[test]
     fn from_builder_preserves_fx_rates() {
-        let md = build_test_service();
+        let md = build_test_builder();
         let concurrent = ConcurrentMarketData::from_builder(md);
 
         let usd = Currency::new("USD");
@@ -496,7 +529,7 @@ mod tests {
 
     #[test]
     fn identity_fx_rate() {
-        let md = build_test_service();
+        let md = build_test_builder();
         let concurrent = ConcurrentMarketData::from_builder(md);
 
         let usd = Currency::new("USD");
@@ -507,7 +540,7 @@ mod tests {
 
     #[test]
     fn price_not_found_for_missing_date() {
-        let md = build_test_service();
+        let md = build_test_builder();
         let concurrent = ConcurrentMarketData::from_builder(md);
 
         let aapl = InstrumentId::new("AAPL");
@@ -517,7 +550,7 @@ mod tests {
 
     #[test]
     fn price_history_returns_range() {
-        let md = build_test_service();
+        let md = build_test_builder();
         let concurrent = ConcurrentMarketData::from_builder(md);
 
         let aapl = InstrumentId::new("AAPL");
@@ -530,7 +563,7 @@ mod tests {
 
     #[test]
     fn instrument_type_and_allocations() {
-        let md = build_test_service();
+        let md = build_test_builder();
         let concurrent = ConcurrentMarketData::from_builder(md);
 
         let aapl = InstrumentId::new("AAPL");
@@ -542,7 +575,7 @@ mod tests {
 
     #[test]
     fn concurrent_update_price() {
-        let md = build_test_service();
+        let md = build_test_builder();
         let concurrent = ConcurrentMarketData::from_builder(md);
 
         let aapl = InstrumentId::new("AAPL");
@@ -560,7 +593,7 @@ mod tests {
 
     #[test]
     fn fx_rate_history_range() {
-        let md = build_test_service();
+        let md = build_test_builder();
         let concurrent = ConcurrentMarketData::from_builder(md);
 
         let usd = Currency::new("USD");
@@ -572,7 +605,7 @@ mod tests {
 
     #[test]
     fn stats_methods() {
-        let md = build_test_service();
+        let md = build_test_builder();
         let concurrent = ConcurrentMarketData::from_builder(md);
 
         assert_eq!(concurrent.instrument_count(), 2);

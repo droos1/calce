@@ -3,8 +3,8 @@ pub mod cdc;
 pub mod concurrent_market_data;
 pub mod config;
 pub mod error;
-pub mod in_memory_market_data;
 pub mod loader;
+pub mod market_data_builder;
 pub mod market_data_store;
 pub mod permissions;
 pub mod queries;
@@ -12,4 +12,4 @@ pub mod types;
 pub mod user_data_store;
 
 pub use concurrent_market_data::ConcurrentMarketData;
-pub use in_memory_market_data::InMemoryMarketDataService;
+pub use market_data_builder::MarketDataBuilder;

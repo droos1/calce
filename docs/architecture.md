@@ -35,7 +35,7 @@ API handler → DataService.load_calc_inputs(security_ctx, spec)
   1. Authorize access to all subjects      (sync, calce-data auth)
   2. Load trades from backend              (async)
   3. Batch-load prices + FX for positions  (async, avoids N+1)
-  4. Build InMemoryMarketDataService       (sync bridge object)
+  4. Build MarketDataBuilder → ConcurrentMarketData
   5. Return CalcInputs { trades, market_data }
 
 API handler → aggregate_positions + value_positions  (sync, calce-core)

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use serde::Serialize;
 
 use crate::concurrent_market_data::ConcurrentMarketData;
-use crate::in_memory_market_data::InMemoryMarketDataService;
+use crate::market_data_builder::MarketDataBuilder;
 
 pub struct MarketDataStore {
     market_data: Arc<ConcurrentMarketData>,
@@ -32,7 +32,7 @@ pub struct InstrumentSummary {
 }
 
 impl MarketDataStore {
-    pub fn from_memory(md: InMemoryMarketDataService) -> Self {
+    pub fn from_memory(md: MarketDataBuilder) -> Self {
         let concurrent = ConcurrentMarketData::from_builder(md);
         let instruments: HashMap<i64, InstrumentSummary> = concurrent
             .instrument_ids()
@@ -133,7 +133,7 @@ mod tests {
         let sek = Currency::new("SEK");
         let aapl = InstrumentId::new("AAPL");
 
-        let mut md = InMemoryMarketDataService::new();
+        let mut md = MarketDataBuilder::new();
         md.add_price(&aapl, date(2025, 1, 10), Price::new(150.0));
         md.add_fx_rate(FxRate::new(usd, sek, 10.5), date(2025, 1, 10));
 
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn get_instrument_is_direct_lookup() {
-        let md = InMemoryMarketDataService::new();
+        let md = MarketDataBuilder::new();
         let instruments = vec![InstrumentSummary {
             id: 42,
             ticker: "AAPL".to_owned(),

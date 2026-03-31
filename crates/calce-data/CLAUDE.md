@@ -25,7 +25,7 @@ Postgres-backed storage and the data stores that the API layer consumes.
 ```
 loader::load_from_postgres(pool)
     ├── queries/  (async SQL)
-    ├── MarketDataStore  (wraps InMemoryMarketDataService from calce-core)
+    ├── MarketDataStore  (wraps ConcurrentMarketData)
     └── UserDataStore    (trades + users + auth)
 ```
 
