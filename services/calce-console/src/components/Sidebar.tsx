@@ -7,6 +7,7 @@ import {
   IconChart,
   IconCurrency,
   IconActivity,
+  IconDatabase,
   IconPalette,
   IconLogout,
 } from './icons'
@@ -47,6 +48,9 @@ function Sidebar() {
           <div className="ds-sidebar__section-title">Dev Tools</div>
           <NavLink to="/simulator" className={linkClass}>
             <IconActivity /> Price Simulator
+          </NavLink>
+          <NavLink to="/update-simulator" className={linkClass}>
+            <IconDatabase /> Update Simulator
           </NavLink>
         </div>
         <div className="ds-sidebar__section">

@@ -14,20 +14,51 @@ use std::time::Duration;
 use calce_data::concurrent_market_data::ConcurrentMarketData;
 use rand::Rng;
 use rand::seq::SliceRandom;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
-// -- Tuning constants (easy to adjust) ---------------------------------------
+// -- Config ------------------------------------------------------------------
 
-/// Number of FX pairs to update each tick.
-const FX_UPDATES_PER_TICK: usize = 10;
-/// Number of instrument current prices to update each tick.
-const PRICE_UPDATES_PER_TICK: usize = 50;
-/// Number of random historical prices to update each tick.
-const HISTORY_UPDATES_PER_TICK: usize = 10;
-/// Interval between ticks.
-const TICK_INTERVAL: Duration = Duration::from_millis(100);
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulatorConfig {
+    /// Interval between ticks in milliseconds.
+    #[serde(default = "default_tick_interval_ms")]
+    pub tick_interval_ms: u64,
+    /// Number of instrument current prices to update each tick.
+    #[serde(default = "default_prices_per_tick")]
+    pub prices_per_tick: usize,
+    /// Number of FX pairs to update each tick.
+    #[serde(default = "default_fx_per_tick")]
+    pub fx_per_tick: usize,
+    /// Number of random historical prices to update each tick.
+    #[serde(default = "default_history_per_tick")]
+    pub history_per_tick: usize,
+}
+
+fn default_tick_interval_ms() -> u64 {
+    100
+}
+fn default_prices_per_tick() -> usize {
+    50
+}
+fn default_fx_per_tick() -> usize {
+    10
+}
+fn default_history_per_tick() -> usize {
+    10
+}
+
+impl Default for SimulatorConfig {
+    fn default() -> Self {
+        Self {
+            tick_interval_ms: default_tick_interval_ms(),
+            prices_per_tick: default_prices_per_tick(),
+            fx_per_tick: default_fx_per_tick(),
+            history_per_tick: default_history_per_tick(),
+        }
+    }
+}
 
 // -- Stats -------------------------------------------------------------------
 
@@ -43,6 +74,7 @@ struct AtomicStats {
 #[derive(Serialize, Clone)]
 pub struct SimulatorStats {
     pub running: bool,
+    pub config: SimulatorConfig,
     pub ticks: u64,
     pub fx_updates: u64,
     pub price_updates: u64,
@@ -56,6 +88,7 @@ pub struct Simulator {
     market_data: Arc<ConcurrentMarketData>,
     running: AtomicBool,
     stop_notify: Notify,
+    config: tokio::sync::Mutex<SimulatorConfig>,
     stats: AtomicStats,
     handle: tokio::sync::Mutex<Option<JoinHandle<()>>>,
 }
@@ -66,18 +99,20 @@ impl Simulator {
             market_data,
             running: AtomicBool::new(false),
             stop_notify: Notify::new(),
+            config: tokio::sync::Mutex::new(SimulatorConfig::default()),
             stats: AtomicStats::default(),
             handle: tokio::sync::Mutex::new(None),
         }
     }
 
-    /// Start the simulator. Returns false if already running.
-    pub async fn start(self: &Arc<Self>) -> bool {
+    /// Start the simulator with the given config. Returns false if already running.
+    pub async fn start(self: &Arc<Self>, cfg: SimulatorConfig) -> bool {
         if self.running.swap(true, Ordering::SeqCst) {
-            return false; // already running
+            return false;
         }
 
-        // Reset stats on fresh start
+        *self.config.lock().await = cfg;
+
         self.stats.fx_updates.store(0, Ordering::Relaxed);
         self.stats.price_updates.store(0, Ordering::Relaxed);
         self.stats.history_updates.store(0, Ordering::Relaxed);
@@ -96,7 +131,7 @@ impl Simulator {
     /// Stop the simulator. Returns false if not running.
     pub async fn stop(self: &Arc<Self>) -> bool {
         if !self.running.swap(false, Ordering::SeqCst) {
-            return false; // not running
+            return false;
         }
         self.stop_notify.notify_one();
         if let Some(handle) = self.handle.lock().await.take() {
@@ -105,9 +140,10 @@ impl Simulator {
         true
     }
 
-    pub fn stats(&self) -> SimulatorStats {
+    pub async fn stats(&self) -> SimulatorStats {
         SimulatorStats {
             running: self.running.load(Ordering::Relaxed),
+            config: self.config.lock().await.clone(),
             ticks: self.stats.ticks.load(Ordering::Relaxed),
             fx_updates: self.stats.fx_updates.load(Ordering::Relaxed),
             price_updates: self.stats.price_updates.load(Ordering::Relaxed),
@@ -120,11 +156,13 @@ impl Simulator {
 
     async fn run_loop(&self) {
         tracing::info!("Price simulator started");
+        let cfg = self.config.lock().await.clone();
+        let interval = Duration::from_millis(cfg.tick_interval_ms.max(10));
 
         loop {
             tokio::select! {
-                () = tokio::time::sleep(TICK_INTERVAL) => {
-                    self.tick();
+                () = tokio::time::sleep(interval) => {
+                    self.tick(&cfg);
                 }
                 () = self.stop_notify.notified() => {
                     break;
@@ -135,7 +173,7 @@ impl Simulator {
         tracing::info!("Price simulator stopped");
     }
 
-    fn tick(&self) {
+    fn tick(&self, cfg: &SimulatorConfig) {
         let mut rng = rand::thread_rng();
         let md = &self.market_data;
 
@@ -143,7 +181,7 @@ impl Simulator {
         let fx_keys = md.fx_pair_keys();
         if !fx_keys.is_empty() {
             let sample: Vec<_> = fx_keys
-                .choose_multiple(&mut rng, FX_UPDATES_PER_TICK.min(fx_keys.len()))
+                .choose_multiple(&mut rng, cfg.fx_per_tick.min(fx_keys.len()))
                 .collect();
             for &(from, to) in &sample {
                 if let Some(rate) = md.current_fx_rate(*from, *to) {
@@ -161,7 +199,7 @@ impl Simulator {
         let instrument_ids = md.instrument_ids();
         if !instrument_ids.is_empty() {
             let sample: Vec<_> = instrument_ids
-                .choose_multiple(&mut rng, PRICE_UPDATES_PER_TICK.min(instrument_ids.len()))
+                .choose_multiple(&mut rng, cfg.prices_per_tick.min(instrument_ids.len()))
                 .collect();
             for id in &sample {
                 if let Some(price) = md.current_price(id) {
@@ -178,7 +216,7 @@ impl Simulator {
         // -- Historical price updates ----------------------------------------
         if !instrument_ids.is_empty() {
             let sample: Vec<_> = instrument_ids
-                .choose_multiple(&mut rng, HISTORY_UPDATES_PER_TICK.min(instrument_ids.len()))
+                .choose_multiple(&mut rng, cfg.history_per_tick.min(instrument_ids.len()))
                 .collect();
             for id in &sample {
                 if let Some(len) = md.price_history_len(id) {
@@ -217,7 +255,7 @@ impl Simulator {
 
 /// Nudge a value: if the second decimal digit is odd, increase by 0.01;
 /// if even, decrease by 0.01. This makes prices oscillate without drift.
-fn nudge(value: f64) -> f64 {
+pub(crate) fn nudge(value: f64) -> f64 {
     // Extract second decimal digit: floor(value * 100) mod 10
     let cents = (value * 100.0).floor() as i64;
     let second_decimal = (cents % 10).unsigned_abs();

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
-import type { SimulatorConfig } from '../api/types'
+import type { DbSimulatorConfig } from '../api/types'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useEventSource } from '../hooks/useEventSource'
 import { useEventBuffer } from '../hooks/useEventBuffer'
@@ -10,32 +10,30 @@ import Card from '../components/Card'
 import StatCard from '../components/StatCard'
 import Badge from '../components/Badge'
 
-const INITIAL_COUNTS = { price_current: 0, price_history: 0, fx_current: 0 } as const;
+const INITIAL_COUNTS = { price_current: 0, fx_current: 0 } as const;
 type Counts = typeof INITIAL_COUNTS;
 
-function classifyEvent(event: { type: string; kind: string }): keyof Counts | null {
-  if (event.type === 'price' && event.kind === 'current') return 'price_current';
-  if (event.type === 'price' && event.kind === 'history') return 'price_history';
+function classifyEvent(event: { type: string }): keyof Counts | null {
+  if (event.type === 'price') return 'price_current';
   if (event.type === 'fx') return 'fx_current';
   return null;
 }
 
-const DEFAULT_CONFIG: SimulatorConfig = {
-  tick_interval_ms: 100,
-  prices_per_tick: 50,
-  fx_per_tick: 10,
-  history_per_tick: 10,
+const DEFAULT_CONFIG: DbSimulatorConfig = {
+  tick_interval_ms: 500,
+  prices_per_tick: 5,
+  fx_per_tick: 2,
 }
 
-export default function SimulatorPage() {
-  usePageTitle('Price Simulator')
+export default function UpdateSimulatorPage() {
+  usePageTitle('Update Simulator')
   const queryClient = useQueryClient()
 
-  const [config, setConfig] = useState<SimulatorConfig>(DEFAULT_CONFIG)
+  const [config, setConfig] = useState<DbSimulatorConfig>(DEFAULT_CONFIG)
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['simulator-status'],
-    queryFn: () => api.getSimulatorStatus(),
+    queryKey: ['db-simulator-status'],
+    queryFn: () => api.getDbSimulatorStatus(),
     refetchInterval: (query) => query.state.data?.running ? 1000 : false,
   })
 
@@ -44,16 +42,16 @@ export default function SimulatorPage() {
   }, [stats?.config])
 
   const startMutation = useMutation({
-    mutationFn: () => api.startSimulator(config),
+    mutationFn: () => api.startDbSimulator(config),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['simulator-status'] })
+      queryClient.invalidateQueries({ queryKey: ['db-simulator-status'] })
     },
   })
 
   const stopMutation = useMutation({
-    mutationFn: () => api.stopSimulator(),
+    mutationFn: () => api.stopDbSimulator(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['simulator-status'] })
+      queryClient.invalidateQueries({ queryKey: ['db-simulator-status'] })
     },
   })
 
@@ -77,7 +75,7 @@ export default function SimulatorPage() {
     return n.toLocaleString()
   }
 
-  function updateConfig(key: keyof SimulatorConfig, value: string) {
+  function updateConfig(key: keyof DbSimulatorConfig, value: string) {
     const n = parseInt(value, 10)
     if (!isNaN(n) && n >= 0) setConfig(prev => ({ ...prev, [key]: n }))
   }
@@ -86,9 +84,9 @@ export default function SimulatorPage() {
     <div className="ds-page">
       <div className="ds-page__header">
         <div>
-          <h1 className="ds-page__title">Price Simulator</h1>
+          <h1 className="ds-page__title">Update Simulator</h1>
           <p className="ds-text--secondary" style={{ marginTop: 'var(--spacing-xs)' }}>
-            Simulates price movements for development and testing
+            Writes prices to the database. CDC propagates changes to the cache.
           </p>
         </div>
         <div className="ds-page__actions">
@@ -117,9 +115,8 @@ export default function SimulatorPage() {
         <>
           <div className="ds-stat-grid">
             <StatCard label="Ticks" value={formatNumber(stats.ticks)} />
-            <StatCard label="Price Updates" value={formatNumber(stats.price_updates)} />
-            <StatCard label="FX Updates" value={formatNumber(stats.fx_updates)} />
-            <StatCard label="History Updates" value={formatNumber(stats.history_updates)} />
+            <StatCard label="Price Writes" value={formatNumber(stats.price_writes)} />
+            <StatCard label="FX Writes" value={formatNumber(stats.fx_writes)} />
             <StatCard label="Errors" value={formatNumber(stats.errors)} />
           </div>
 
@@ -130,13 +127,13 @@ export default function SimulatorPage() {
                 <tr>
                   <td className="ds-table__cell">Tick interval (ms)</td>
                   <td className="ds-table__cell ds-table__cell--numeric">
-                    <input className="ds-input ds-input--compact" type="number" min="10" step="10"
+                    <input className="ds-input ds-input--compact" type="number" min="10" step="50"
                       value={config.tick_interval_ms} disabled={running}
                       onChange={e => updateConfig('tick_interval_ms', e.target.value)} />
                   </td>
                 </tr>
                 <tr>
-                  <td className="ds-table__cell">Prices per tick</td>
+                  <td className="ds-table__cell">Price writes per tick</td>
                   <td className="ds-table__cell ds-table__cell--numeric">
                     <input className="ds-input ds-input--compact" type="number" min="0" step="1"
                       value={config.prices_per_tick} disabled={running}
@@ -144,19 +141,11 @@ export default function SimulatorPage() {
                   </td>
                 </tr>
                 <tr>
-                  <td className="ds-table__cell">FX pairs per tick</td>
+                  <td className="ds-table__cell">FX writes per tick</td>
                   <td className="ds-table__cell ds-table__cell--numeric">
                     <input className="ds-input ds-input--compact" type="number" min="0" step="1"
                       value={config.fx_per_tick} disabled={running}
                       onChange={e => updateConfig('fx_per_tick', e.target.value)} />
-                  </td>
-                </tr>
-                <tr>
-                  <td className="ds-table__cell">History updates per tick</td>
-                  <td className="ds-table__cell ds-table__cell--numeric">
-                    <input className="ds-input ds-input--compact" type="number" min="0" step="1"
-                      value={config.history_per_tick} disabled={running}
-                      onChange={e => updateConfig('history_per_tick', e.target.value)} />
                   </td>
                 </tr>
               </tbody>
@@ -165,7 +154,7 @@ export default function SimulatorPage() {
 
           <Card>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-sm)' }}>
-              <h3>Live PubSub Events</h3>
+              <h3>Live CDC Events</h3>
               <div className="ds-page__actions">
                 <Badge variant={sseConnected ? 'success' : 'neutral'}>
                   {sseConnected ? 'Connected' : 'Disconnected'}
@@ -182,7 +171,6 @@ export default function SimulatorPage() {
               <div className="ds-stat-grid" style={{ marginBottom: 'var(--spacing-md)' }}>
                 <StatCard label="Total Events" value={formatNumber(totalEvents)} />
                 <StatCard label="Price (current)" value={formatNumber(counts.price_current)} />
-                <StatCard label="Price (history)" value={formatNumber(counts.price_history)} />
                 <StatCard label="FX (current)" value={formatNumber(counts.fx_current)} />
               </div>
             )}
@@ -214,7 +202,7 @@ export default function SimulatorPage() {
               </div>
             ) : (
               <p className="ds-text--secondary">
-                {sseConnected ? 'Waiting for events... Start the simulator to see updates.' : 'Click Connect to subscribe to live PubSub events.'}
+                {sseConnected ? 'Waiting for events... Start the simulator to see CDC updates.' : 'Click Connect to subscribe to live CDC events.'}
               </p>
             )}
           </Card>

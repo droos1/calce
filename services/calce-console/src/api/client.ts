@@ -10,6 +10,9 @@ import type {
   PaginatedResponse,
   PositionSummary,
   Price,
+  DbSimulatorConfig,
+  DbSimulatorStats,
+  SimulatorConfig,
   SimulatorStats,
   TradeSummary,
   User,
@@ -37,6 +40,7 @@ async function refreshTokens(): Promise<void> {
     throw new Error("No refresh token");
   }
 
+  console.info("[auth] refreshing token");
   const res = await fetch("/auth/refresh", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -44,12 +48,14 @@ async function refreshTokens(): Promise<void> {
   });
 
   if (!res.ok) {
+    console.error("[auth] token refresh failed:", res.status, res.statusText);
     throw new Error("Refresh failed");
   }
 
   const data: LoginResponse = await res.json();
   localStorage.setItem(TOKEN_KEY, data.access_token);
   localStorage.setItem(REFRESH_KEY, data.refresh_token);
+  console.info("[auth] token refreshed");
 }
 
 export async function fetchApi<T>(
@@ -78,8 +84,9 @@ export async function fetchApi<T>(
       const newToken = localStorage.getItem(TOKEN_KEY);
       headers["Authorization"] = `Bearer ${newToken}`;
       res = await fetch(path, { ...options, headers });
-    } catch {
+    } catch (err) {
       refreshPromise = null;
+      console.error("[auth] session expired, redirecting to login", err);
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(REFRESH_KEY);
       window.location.href = "/login";
@@ -89,7 +96,9 @@ export async function fetchApi<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: "unknown", message: res.statusText }));
-    throw new Error(body.message || res.statusText);
+    const msg = body.message || res.statusText;
+    console.error(`[api] ${options.method ?? "GET"} ${path} → ${res.status}: ${msg}`);
+    throw new Error(msg);
   }
 
   return res.json();
@@ -236,14 +245,32 @@ export const api = {
     return fetchApi<SimulatorStats>("/v1/admin/simulator/status");
   },
 
-  startSimulator(): Promise<SimulatorStats> {
+  startSimulator(config: SimulatorConfig): Promise<SimulatorStats> {
     return fetchApi<SimulatorStats>("/v1/admin/simulator/start", {
       method: "POST",
+      body: JSON.stringify(config),
     });
   },
 
   stopSimulator(): Promise<SimulatorStats> {
     return fetchApi<SimulatorStats>("/v1/admin/simulator/stop", {
+      method: "POST",
+    });
+  },
+
+  getDbSimulatorStatus(): Promise<DbSimulatorStats> {
+    return fetchApi<DbSimulatorStats>("/v1/admin/db-simulator/status");
+  },
+
+  startDbSimulator(config: DbSimulatorConfig): Promise<DbSimulatorStats> {
+    return fetchApi<DbSimulatorStats>("/v1/admin/db-simulator/start", {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+  },
+
+  stopDbSimulator(): Promise<DbSimulatorStats> {
+    return fetchApi<DbSimulatorStats>("/v1/admin/db-simulator/stop", {
       method: "POST",
     });
   },

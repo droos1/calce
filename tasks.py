@@ -30,18 +30,14 @@ PYTHON_DIRS = "services/ crates/calce-python/tests/ tools/"
 
 # ── Server ──────────────────────────────────────────────────────────────
 #
-# Three backends:
 #   invoke api          — local Postgres (requires: invoke db, invoke seed-db)
 #   invoke ai           — AI chat interface (requires: invoke db, ANTHROPIC_API_KEY)
-#   invoke api-njorda   — njorda market-data cache (requires: invoke njorda-fetch)
 
 
-def _run_api(c, backend="postgres", features="", release=False, watch=False):
+def _run_api(c, release=False, watch=False):
     env = {"RUST_LOG": "info"}
-    if backend != "postgres":
-        env["CALCE_BACKEND"] = backend
     flag = " --release" if release else ""
-    cargo_cmd = f"run -p calce-api{flag}{features}"
+    cargo_cmd = f"run -p calce-api{flag}"
     if watch:
         c.run("bacon --job run-long", pty=True, env=env)
     else:
@@ -52,13 +48,6 @@ def _run_api(c, backend="postgres", features="", release=False, watch=False):
 def api(c, release=False, watch=False):
     """Start API server against local Postgres. Use -r for release, -w for auto-reload."""
     _run_api(c, release=release, watch=watch)
-
-
-@task
-def api_njorda(c, release=False, watch=False):
-    """Start API server against njorda cache (market data only, no users). Use -w for auto-reload."""
-    _run_api(c, backend="njorda-cache", features=" --features njorda",
-             release=release, watch=watch)
 
 
 @task
@@ -124,12 +113,12 @@ def dev(c):
     # 4. Wait for API to be ready, then open console
     print(f"Waiting for API on port {API_PORT}...")
     try:
-        import urllib.request
+        import socket
         for _ in range(60):
             try:
-                urllib.request.urlopen(f"http://localhost:{API_PORT}/", timeout=1)
-                break
-            except Exception:
+                with socket.create_connection(("localhost", API_PORT), timeout=1):
+                    break
+            except OSError:
                 _time.sleep(1)
         else:
             print("Warning: API did not respond within 60s, opening browser anyway")
@@ -269,19 +258,6 @@ def njorda_proxy(c):
         pty=True,
     )
 
-
-@task
-def njorda_fetch(c, from_date="2023-01-01", to_date="2026-03-06", fresh=False):
-    """Fetch market data from njorda dev DB into local cache.
-
-    Requires: Cloud SQL Proxy running (invoke njorda-proxy) and NJORDA_DB_PASSWORD env var.
-    """
-    fresh_flag = " --fresh" if fresh else ""
-    c.run(
-        f"cargo run -p calce-integrations --features njorda --bin njorda-fetch -- "
-        f"--from {from_date} --to {to_date}{fresh_flag}",
-        pty=True,
-    )
 
 
 # ── Build ───────────────────────────────────────────────────────────────

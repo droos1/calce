@@ -108,11 +108,34 @@ export interface ApiErrorResponse {
   message: string;
 }
 
+export interface SimulatorConfig {
+  tick_interval_ms: number;
+  prices_per_tick: number;
+  fx_per_tick: number;
+  history_per_tick: number;
+}
+
 export interface SimulatorStats {
   running: boolean;
+  config: SimulatorConfig;
   ticks: number;
   fx_updates: number;
   price_updates: number;
   history_updates: number;
+  errors: number;
+}
+
+export interface DbSimulatorConfig {
+  tick_interval_ms: number;
+  prices_per_tick: number;
+  fx_per_tick: number;
+}
+
+export interface DbSimulatorStats {
+  running: boolean;
+  config: DbSimulatorConfig;
+  ticks: number;
+  price_writes: number;
+  fx_writes: number;
   errors: number;
 }

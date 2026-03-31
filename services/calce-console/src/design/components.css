@@ -155,6 +155,13 @@
   box-shadow: 0 0 0 2px var(--color-error-light);
 }
 
+.ds-input--compact {
+  width: 6rem;
+  height: calc(var(--input-height) - 4px);
+  text-align: right;
+  padding: 0 var(--spacing-xs);
+}
+
 .ds-input:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -330,6 +337,13 @@
 .ds-table .ds-table__sort-desc::after {
   content: " \25BC";
   font-size: 9px;
+}
+
+.ds-table--sticky-header th {
+  position: sticky;
+  top: 0;
+  background: var(--color-bg);
+  z-index: 1;
 }
 
 /* -----------------------------------------------------------

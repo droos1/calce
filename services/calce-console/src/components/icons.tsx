@@ -200,6 +200,16 @@ export function IconActivity({ size = 16, className }: IconProps) {
   );
 }
 
+export function IconDatabase({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" className={className} {...defaults}>
+      <ellipse cx="8" cy="4" rx="5" ry="2" />
+      <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4" />
+      <path d="M3 8c0 1.1 2.2 2 5 2s5-.9 5-2" />
+    </svg>
+  );
+}
+
 export function IconCurrency({ size = 16, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" className={className} {...defaults}>

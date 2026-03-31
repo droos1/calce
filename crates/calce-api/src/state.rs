@@ -9,6 +9,7 @@ use calce_data::user_data_store::UserDataStore;
 use calce_datastructs::pubsub::PubSub;
 use sqlx::PgPool;
 
+use crate::db_simulator::DbSimulator;
 use crate::rate_limit::KeyedRateLimiter;
 use crate::simulator::Simulator;
 
@@ -24,6 +25,7 @@ pub struct AppState {
     pub api_key_cache: ApiKeyCache,
     pub auth_rate_limiter: Arc<KeyedRateLimiter>,
     pub simulator: Option<Arc<Simulator>>,
+    pub db_simulator: Option<Arc<DbSimulator>>,
     pub price_pubsub: Option<Arc<PricePubSub>>,
     pub fx_pubsub: Option<Arc<FxPubSub>>,
 }

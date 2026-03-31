@@ -349,6 +349,53 @@ impl MarketDataRepo {
         Ok(())
     }
 
+    /// Batch upsert prices using a single `UNNEST` query.
+    pub async fn batch_upsert_prices(
+        &self,
+        tickers: &[&str],
+        date: NaiveDate,
+        prices: &[f64],
+    ) -> DataResult<u64> {
+        let result = sqlx::query(
+            "INSERT INTO prices (instrument_id, price_date, price) \
+             SELECT i.id, $1, u.price \
+             FROM UNNEST($2::text[], $3::float8[]) AS u(ticker, price) \
+             JOIN instruments i ON i.ticker = u.ticker \
+             ON CONFLICT ON CONSTRAINT uq_prices_instrument_date \
+             DO UPDATE SET price = EXCLUDED.price",
+        )
+        .bind(date)
+        .bind(tickers)
+        .bind(prices)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Batch upsert FX rates using a single `UNNEST` query.
+    pub async fn batch_upsert_fx_rates(
+        &self,
+        from_currencies: &[&str],
+        to_currencies: &[&str],
+        date: NaiveDate,
+        rates: &[f64],
+    ) -> DataResult<u64> {
+        let result = sqlx::query(
+            "INSERT INTO fx_rates (from_currency, to_currency, rate_date, rate) \
+             SELECT u.from_ccy, u.to_ccy, $1, u.rate \
+             FROM UNNEST($2::char(3)[], $3::char(3)[], $4::float8[]) AS u(from_ccy, to_ccy, rate) \
+             ON CONFLICT (from_currency, to_currency, rate_date) \
+             DO UPDATE SET rate = EXCLUDED.rate",
+        )
+        .bind(date)
+        .bind(from_currencies)
+        .bind(to_currencies)
+        .bind(rates)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+
     pub async fn insert_instrument(
         &self,
         id: &InstrumentId,

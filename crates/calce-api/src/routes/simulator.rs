@@ -11,7 +11,7 @@ use tokio_stream::StreamExt;
 
 use crate::auth::{Auth, require_admin};
 use crate::error::ApiError;
-use crate::simulator::SimulatorStats;
+use crate::simulator::{SimulatorConfig, SimulatorStats};
 use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -25,11 +25,13 @@ pub fn routes() -> Router<AppState> {
 async fn start(
     Auth(ctx): Auth,
     State(state): State<AppState>,
+    body: Option<Json<SimulatorConfig>>,
 ) -> Result<Json<SimulatorStats>, ApiError> {
     require_admin(&ctx)?;
     let sim = simulator(&state)?;
-    sim.start().await;
-    Ok(Json(sim.stats()))
+    let cfg = body.map(|b| b.0).unwrap_or_default();
+    sim.start(cfg).await;
+    Ok(Json(sim.stats().await))
 }
 
 async fn stop(
@@ -39,7 +41,7 @@ async fn stop(
     require_admin(&ctx)?;
     let sim = simulator(&state)?;
     sim.stop().await;
-    Ok(Json(sim.stats()))
+    Ok(Json(sim.stats().await))
 }
 
 async fn status(
@@ -48,7 +50,7 @@ async fn status(
 ) -> Result<Json<SimulatorStats>, ApiError> {
     require_admin(&ctx)?;
     let sim = simulator(&state)?;
-    Ok(Json(sim.stats()))
+    Ok(Json(sim.stats().await))
 }
 
 #[derive(Serialize)]

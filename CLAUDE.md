@@ -10,7 +10,6 @@ crates/
 ├── calce-core/             — core Rust library (no DB/async deps)
 ├── calce-datastructs/      — concurrent data structures (caches, pubsub)
 ├── calce-data/             — Postgres-backed storage + DataService
-├── calce-integrations/     — external data source integrations (njorda, etc.)
 ├── calce-api/              — HTTP server, wires data + core
 └── calce-python/           — PyO3 bindings (depends on core + data)
 services/

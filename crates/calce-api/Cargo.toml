@@ -28,12 +28,6 @@ governor = "0.8"
 dotenvy = "0.15"
 rand = "0.8"
 
-calce-integrations = { path = "../calce-integrations", optional = true }
-
-[features]
-default = []
-njorda = ["dep:calce-integrations", "calce-integrations/njorda"]
-
 [lints]
 workspace = true
 
