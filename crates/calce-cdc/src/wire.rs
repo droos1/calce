@@ -376,30 +376,19 @@ impl PgStream {
 // -- Helpers ------------------------------------------------------------------
 
 /// Parse column values from a DataRow message body.
-#[allow(clippy::cast_sign_loss)]
 fn parse_data_row(body: &backend::DataRowBody) -> Vec<Option<String>> {
-    let mut buf = body.buffer();
-    if buf.remaining() < 2 {
-        return Vec::new();
-    }
-    let num_cols = buf.get_i16() as usize;
-    let mut row = Vec::with_capacity(num_cols);
-    for _ in 0..num_cols {
-        if buf.remaining() < 4 {
-            break;
-        }
-        let len = buf.get_i32();
-        if len < 0 {
-            row.push(None);
-        } else {
-            let len = len as usize;
-            if buf.remaining() >= len {
-                let s = String::from_utf8_lossy(&buf.chunk()[..len]).into_owned();
-                buf.advance(len);
+    use fallible_iterator::FallibleIterator;
+
+    let buf = body.buffer();
+    let mut row = Vec::new();
+    let mut ranges = body.ranges();
+    while let Ok(Some(range)) = ranges.next() {
+        match range {
+            Some(r) => {
+                let s = String::from_utf8_lossy(&buf[r]).into_owned();
                 row.push(Some(s));
-            } else {
-                row.push(None);
             }
+            None => row.push(None),
         }
     }
     row
