@@ -36,3 +36,4 @@ __pycache__/
 *.egg-info/
 dist/
 .pytest_cache/
+/services/calce-console/test-results/

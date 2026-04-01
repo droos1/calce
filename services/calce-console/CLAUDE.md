@@ -43,6 +43,10 @@ Components must work in both — use CSS custom properties, never hardcode color
 Backend at `http://localhost:35701`, proxied through Vite so use relative paths (`/v1/...`, `/auth/...`).
 API client: `src/api/client.ts`.
 
+## Live Updates
+
+All pages displaying mutable data must use `useEntityEvents` from `src/hooks/useEntityEvents.ts` to receive real-time updates via CDC → SSE. Query keys must start with the plural table name (e.g. `['users', ...]`) for automatic invalidation to work. See `docs/live-updates.md` for the full pattern, query key conventions, and gotchas.
+
 ## Development
 
 ```bash
